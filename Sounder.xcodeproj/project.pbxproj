@@ -1,0 +1,558 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		B5CAB2762E7BB22D002EE2A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5CAB25D2E7BB22C002EE2A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B5CAB2642E7BB22C002EE2A0;
+			remoteInfo = Sounder;
+		};
+		B5CAB2802E7BB22D002EE2A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5CAB25D2E7BB22C002EE2A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B5CAB2642E7BB22C002EE2A0;
+			remoteInfo = Sounder;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B5CAB2652E7BB22C002EE2A0 /* Sounder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sounder.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B5CAB2752E7BB22D002EE2A0 /* SounderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SounderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B5CAB27F2E7BB22D002EE2A0 /* SounderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SounderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		B5CAB2672E7BB22C002EE2A0 /* Sounder */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sounder;
+			sourceTree = "<group>";
+		};
+		B5CAB2782E7BB22D002EE2A0 /* SounderTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SounderTests;
+			sourceTree = "<group>";
+		};
+		B5CAB2822E7BB22D002EE2A0 /* SounderUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SounderUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B5CAB2622E7BB22C002EE2A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB2722E7BB22D002EE2A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB27C2E7BB22D002EE2A0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B5CAB25C2E7BB22C002EE2A0 = {
+			isa = PBXGroup;
+			children = (
+				B5CAB2672E7BB22C002EE2A0 /* Sounder */,
+				B5CAB2782E7BB22D002EE2A0 /* SounderTests */,
+				B5CAB2822E7BB22D002EE2A0 /* SounderUITests */,
+				B5CAB2662E7BB22C002EE2A0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B5CAB2662E7BB22C002EE2A0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B5CAB2652E7BB22C002EE2A0 /* Sounder.app */,
+				B5CAB2752E7BB22D002EE2A0 /* SounderTests.xctest */,
+				B5CAB27F2E7BB22D002EE2A0 /* SounderUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B5CAB2642E7BB22C002EE2A0 /* Sounder */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5CAB2892E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "Sounder" */;
+			buildPhases = (
+				B5CAB2612E7BB22C002EE2A0 /* Sources */,
+				B5CAB2622E7BB22C002EE2A0 /* Frameworks */,
+				B5CAB2632E7BB22C002EE2A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B5CAB2672E7BB22C002EE2A0 /* Sounder */,
+			);
+			name = Sounder;
+			packageProductDependencies = (
+			);
+			productName = Sounder;
+			productReference = B5CAB2652E7BB22C002EE2A0 /* Sounder.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B5CAB2742E7BB22D002EE2A0 /* SounderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5CAB28C2E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "SounderTests" */;
+			buildPhases = (
+				B5CAB2712E7BB22D002EE2A0 /* Sources */,
+				B5CAB2722E7BB22D002EE2A0 /* Frameworks */,
+				B5CAB2732E7BB22D002EE2A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B5CAB2772E7BB22D002EE2A0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B5CAB2782E7BB22D002EE2A0 /* SounderTests */,
+			);
+			name = SounderTests;
+			packageProductDependencies = (
+			);
+			productName = SounderTests;
+			productReference = B5CAB2752E7BB22D002EE2A0 /* SounderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B5CAB27E2E7BB22D002EE2A0 /* SounderUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5CAB28F2E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "SounderUITests" */;
+			buildPhases = (
+				B5CAB27B2E7BB22D002EE2A0 /* Sources */,
+				B5CAB27C2E7BB22D002EE2A0 /* Frameworks */,
+				B5CAB27D2E7BB22D002EE2A0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B5CAB2812E7BB22D002EE2A0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B5CAB2822E7BB22D002EE2A0 /* SounderUITests */,
+			);
+			name = SounderUITests;
+			packageProductDependencies = (
+			);
+			productName = SounderUITests;
+			productReference = B5CAB27F2E7BB22D002EE2A0 /* SounderUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B5CAB25D2E7BB22C002EE2A0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					B5CAB2642E7BB22C002EE2A0 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					B5CAB2742E7BB22D002EE2A0 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = B5CAB2642E7BB22C002EE2A0;
+					};
+					B5CAB27E2E7BB22D002EE2A0 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = B5CAB2642E7BB22C002EE2A0;
+					};
+				};
+			};
+			buildConfigurationList = B5CAB2602E7BB22C002EE2A0 /* Build configuration list for PBXProject "Sounder" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = B5CAB25C2E7BB22C002EE2A0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = B5CAB2662E7BB22C002EE2A0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B5CAB2642E7BB22C002EE2A0 /* Sounder */,
+				B5CAB2742E7BB22D002EE2A0 /* SounderTests */,
+				B5CAB27E2E7BB22D002EE2A0 /* SounderUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B5CAB2632E7BB22C002EE2A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB2732E7BB22D002EE2A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB27D2E7BB22D002EE2A0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B5CAB2612E7BB22C002EE2A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB2712E7BB22D002EE2A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5CAB27B2E7BB22D002EE2A0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B5CAB2772E7BB22D002EE2A0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B5CAB2642E7BB22C002EE2A0 /* Sounder */;
+			targetProxy = B5CAB2762E7BB22D002EE2A0 /* PBXContainerItemProxy */;
+		};
+		B5CAB2812E7BB22D002EE2A0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B5CAB2642E7BB22C002EE2A0 /* Sounder */;
+			targetProxy = B5CAB2802E7BB22D002EE2A0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		B5CAB2872E7BB22D002EE2A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B5CAB2882E7BB22D002EE2A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = X4F359JL25;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		B5CAB28A2E7BB22D002EE2A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Sounder/Sounder.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.Sounder";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B5CAB28B2E7BB22D002EE2A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Sounder/Sounder.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.Sounder";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B5CAB28D2E7BB22D002EE2A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.SounderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sounder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sounder";
+			};
+			name = Debug;
+		};
+		B5CAB28E2E7BB22D002EE2A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.SounderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sounder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sounder";
+			};
+			name = Release;
+		};
+		B5CAB2902E7BB22D002EE2A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.SounderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Sounder;
+			};
+			name = Debug;
+		};
+		B5CAB2912E7BB22D002EE2A0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X4F359JL25;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-a.SounderUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Sounder;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B5CAB2602E7BB22C002EE2A0 /* Build configuration list for PBXProject "Sounder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B5CAB2872E7BB22D002EE2A0 /* Debug */,
+				B5CAB2882E7BB22D002EE2A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B5CAB2892E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "Sounder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B5CAB28A2E7BB22D002EE2A0 /* Debug */,
+				B5CAB28B2E7BB22D002EE2A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B5CAB28C2E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "SounderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B5CAB28D2E7BB22D002EE2A0 /* Debug */,
+				B5CAB28E2E7BB22D002EE2A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B5CAB28F2E7BB22D002EE2A0 /* Build configuration list for PBXNativeTarget "SounderUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B5CAB2902E7BB22D002EE2A0 /* Debug */,
+				B5CAB2912E7BB22D002EE2A0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = B5CAB25D2E7BB22C002EE2A0 /* Project object */;
+}
