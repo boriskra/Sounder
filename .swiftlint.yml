@@ -1,0 +1,40 @@
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+included:
+  - Sounder
+excluded:
+  - Pods
+  - Carthage
+  - Source/ExcludedFolder
+  - Source/ExcludedFile.swift
+
+# Block Editor specific rules
+opt_in_rules:
+  - explicit_type_interface
+  - force_unwrapping
+  - missing_docs
+  - type_body_length
+  - function_body_length
+  - cyclomatic_complexity
+
+# AudioKit/Audio processing specific configuration
+type_body_length:
+  warning: 200
+  error: 300
+function_body_length:
+  warning: 60
+  error: 100
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+
+# Custom rules for audio parameter validation
+custom_rules:
+  audio_parameter_validation:
+    name: "Audio Parameter Validation"
+    regex: 'func.*parameter.*value.*Double.*\{'
+    message: "Audio parameter functions should validate range and units"
+    severity: warning
+
+reporter: "xcode"
