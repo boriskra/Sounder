@@ -147,6 +147,9 @@ struct BlockCanvasView: View {
                 .position(block.position)
                 .onTapGesture {
                     selectedBlock = block
+                    Task {
+                        await canvasService.setSelectedBlocks([block.id])
+                    }
                 }
             }
         }
