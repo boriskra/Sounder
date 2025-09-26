@@ -688,16 +688,6 @@ extension BlockEditorViewModel {
         }
     }
 
-    var showPerformanceMetrics: Bool {
-        get { performanceMetrics.isPerformanceGood }
-        set { /* This would be stored in settings */ }
-    }
-
-    var enableAutoSave: Bool {
-        get { true } // This would be stored in settings
-        set { /* This would be stored in settings */ }
-    }
-
     var parameterControlsView: ParameterControlsView? {
         // This would return a reference to the parameter controls view
         return nil
