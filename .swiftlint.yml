@@ -33,8 +33,8 @@ cyclomatic_complexity:
 custom_rules:
   audio_parameter_validation:
     name: "Audio Parameter Validation"
-    regex: 'func.*parameter.*value.*Double.*\{'
-    message: "Audio parameter functions should validate range and units"
+    regex: 'func\s+update(?:Block)?Parameter\(.*value:\s*Double\)\s*\{'
+    message: "Update parameter routines should validate range and units before applying new values"
     severity: warning
 
 reporter: "xcode"
