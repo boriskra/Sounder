@@ -417,8 +417,14 @@ struct AudioDeviceView: View {
         let previousDevice = selectedDevice
         selectedDevice = device
 
-        // Update block manager (if available)
-        // blockManager.selectAudioDevice(device)
+        // Update block manager with selected device
+        Task {
+            do {
+                try await blockManager.setOutputDevice(device)
+            } catch {
+                print("Failed to set output device: \(error)")
+            }
+        }
 
         // Record device switch
         if previousDevice?.id != device.id {

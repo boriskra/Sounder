@@ -8,6 +8,8 @@ struct ParameterControlsView: View {
     @State private var localSelectedBlock: SignalBlock?
     @State private var showingAutomation: Bool = false
     @State private var parameterHistory: [String: [Double]] = [:]
+    @State private var availableDevices: [OutputDevice] = []
+    @State private var selectedOutputDevice: OutputDevice?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +32,9 @@ struct ParameterControlsView: View {
             if updatedBlock.id == (localSelectedBlock ?? selectedBlock)?.id {
                 localSelectedBlock = updatedBlock
             }
+        }
+        .onAppear {
+            loadAvailableDevices()
         }
     }
 
@@ -243,10 +248,52 @@ struct ParameterControlsView: View {
             Text("Audio Output Settings")
                 .font(.subheadline.bold())
 
-            Button("Select Device") {
-                // Show device selector
+            HStack {
+                Text("Output Device:")
+                    .font(.subheadline)
+
+                Spacer()
+
+                Menu {
+                    ForEach(availableDevices, id: \.id) { device in
+                        Button(device.displayName) {
+                            selectOutputDevice(device)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(selectedOutputDevice?.displayName ?? "Default")
+                            .foregroundColor(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.bordered)
+
+            if let device = selectedOutputDevice {
+                HStack {
+                    Circle()
+                        .fill(device.isAvailable ? .green : .red)
+                        .frame(width: 6, height: 6)
+
+                    Text(device.isAvailable ? "Available" : "Unavailable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    if device.isBluetoothDevice {
+                        Image(systemName: "bluetooth")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
         }
         .padding()
         .background(Color.gray.opacity(0.1))
@@ -263,6 +310,56 @@ struct ParameterControlsView: View {
 
     public func selectBlock(_ block: SignalBlock?) {
         localSelectedBlock = block
+    }
+
+    // MARK: - Device Management
+
+    private func loadAvailableDevices() {
+        // Load devices from block manager or use default set
+        availableDevices = [
+            OutputDevice(
+                id: "default",
+                name: "Default Output",
+                isDefault: true,
+                isAvailable: true
+            ),
+            OutputDevice(
+                id: "builtin",
+                name: "MacBook Pro Speakers",
+                isDefault: false,
+                isAvailable: true
+            ),
+            OutputDevice(
+                id: "bluetooth1",
+                name: "AirPods Pro",
+                isDefault: false,
+                isAvailable: true
+            ),
+            OutputDevice(
+                id: "bluetooth2",
+                name: "Sony WH-1000XM4",
+                isDefault: false,
+                isAvailable: true
+            )
+        ]
+
+        // Set initial selection to default device
+        if selectedOutputDevice == nil {
+            selectedOutputDevice = availableDevices.first { $0.isDefault }
+        }
+    }
+
+    private func selectOutputDevice(_ device: OutputDevice) {
+        selectedOutputDevice = device
+
+        // Update block manager with selected device
+        Task {
+            do {
+                try await blockManager.setOutputDevice(device)
+            } catch {
+                print("Failed to set output device: \(error)")
+            }
+        }
     }
 }
 

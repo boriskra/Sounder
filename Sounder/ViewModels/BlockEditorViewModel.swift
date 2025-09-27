@@ -211,22 +211,27 @@ class BlockEditorViewModel: ObservableObject {
 
     // Helper function to add timeout to async operations
     private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            // Add the main operation
             group.addTask {
                 try await operation()
             }
 
+            // Add the timeout task
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
                 throw AudioTimeoutError()
             }
 
-            guard let result = try await group.next() else {
+            // Wait for the first task to complete (either operation or timeout)
+            let result = try await group.next()
+            group.cancelAll()
+
+            guard let unwrappedResult = result else {
                 throw AudioTimeoutError()
             }
 
-            group.cancelAll()
-            return result
+            return unwrappedResult
         }
     }
 
