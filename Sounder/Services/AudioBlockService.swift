@@ -508,6 +508,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return BandPassFilterAudioBlock(block: block)
         case .mixer:
             return MixerAudioBlock(block: block)
+        case .amplifier:
+            return AmplifierAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -2232,6 +2234,88 @@ private class MixerAudioBlock: AudioBlock {
     func reset(to startSample: UInt64, sampleRate: Double) {
         // Mixer has no internal state to reset
         print("🎚️ [DEBUG] MixerAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    private static func dbToLinear(_ dB: Double) -> Double {
+        guard dB.isFinite else { return 1.0 }
+        let clampedDb = max(-60.0, min(20.0, dB)) // Clamp to reasonable range
+        return pow(10.0, clampedDb / 20.0)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
+}
+
+/// Timeline-coherent audio amplifier with gain control
+private class AmplifierAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .amplifier
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["output"]
+
+    private var gain: Double = 1.0 // Linear gain (0dB = 1.0)
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        // Initialize gain from block parameters
+        if let gainParam = block.parameters["gain"]?.value {
+            gain = Self.dbToLinear(gainParam)
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let inputSignal = inputs["input"] ?? []
+        var output = [Float](repeating: 0.0, count: frameCount)
+
+        if !inputSignal.isEmpty {
+            let copyCount = min(frameCount, inputSignal.count)
+            for frame in 0..<copyCount {
+                let amplifiedSample = Double(inputSignal[frame]) * gain
+                output[frame] = Float(Self.clampToAudioRange(amplifiedSample))
+            }
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "gain":
+            gain = Self.dbToLinear(value)
+            print("🔊 [DEBUG] AmplifierAudioBlock.setParameter(gain) = \(value)dB")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // Amplifier has no internal state to reset
+        print("🔊 [DEBUG] AmplifierAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
     }
 
     func reset() {
