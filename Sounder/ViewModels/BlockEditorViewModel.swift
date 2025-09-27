@@ -7,12 +7,12 @@ import AVFoundation
 class BlockEditorViewModel: ObservableObject {
     // MARK: - Published Properties
 
-    @Published var isAudioPlaying = false
+    @Published var isAudioPlaying: Bool = false
     @Published var currentConfiguration: BlockConfiguration?
     @Published var selectedBlock: SignalBlock?
-    @Published var showingBlockLibrary = false
-    @Published var showingParameterControls = true
-    @Published var showingAudioDevices = false
+    @Published var showingBlockLibrary: Bool = false
+    @Published var showingParameterControls: Bool = true
+    @Published var showingAudioDevices: Bool = false
 
     // Audio system state
     @Published var currentOutputDevice: OutputDevice?
@@ -22,9 +22,9 @@ class BlockEditorViewModel: ObservableObject {
     @Published var audioLatency: Double = 0.0
 
     // UI state
-    @Published var isLoading = false
+    @Published var isLoading: Bool = false
     @Published var errorMessage: String?
-    @Published var showingError = false
+    @Published var showingError: Bool = false
     @Published var statusMessage: String?
 
     // Configuration management
@@ -58,7 +58,7 @@ class BlockEditorViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var performanceTimer: Timer?
     private var audioLevelTimer: Timer?
-    private var autoSaveBindingReady = false
+    private var autoSaveBindingReady: Bool = false
 
     // MARK: - Initialization
 
@@ -279,7 +279,7 @@ class BlockEditorViewModel: ObservableObject {
 
     func createBlock(type: BlockType, at position: CGPoint) async {
         do {
-            let block = try await blockManager.createBlock(type: type, at: position)
+            let block: SignalBlock = try await blockManager.createBlock(type: type, at: position)
             canvasViewModel.selectBlock(block.id)
             markConfigurationChanged()
 
@@ -289,7 +289,7 @@ class BlockEditorViewModel: ObservableObject {
     }
 
     func deleteSelectedBlocks() async {
-        let selectedBlockIds = Array(canvasViewModel.selectedBlocks)
+        let selectedBlockIds: [UUID] = Array(canvasViewModel.selectedBlocks)
 
         for blockId in selectedBlockIds {
             do {
@@ -319,7 +319,7 @@ class BlockEditorViewModel: ObservableObject {
 
     private func updateSelectedBlock(_ blockId: UUID?) async {
         if let blockId = blockId {
-            let configuration = await blockManager.getCurrentConfiguration()
+            let configuration: BlockConfiguration = await blockManager.getCurrentConfiguration()
             selectedBlock = configuration.blocks.first { $0.id == blockId }
         } else {
             selectedBlock = nil
