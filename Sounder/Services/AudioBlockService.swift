@@ -492,6 +492,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return PinkNoiseAudioBlock(block: block)
         case .linearChirp:
             return LinearChirpAudioBlock(block: block)
+        case .hyperbolicChirp:
+            return HyperbolicChirpAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -1134,6 +1136,213 @@ private class LinearChirpAudioBlock: AudioBlock {
     private static func clampDuration(_ value: Double) -> Double {
         if value.isNaN { return minimumDuration }
         return max(value, minimumDuration)
+    }
+
+    private static func clampAmplitudeDb(_ value: Double) -> Double {
+        if value.isNaN { return -6.0 }
+        return min(max(value, -60.0), 0.0)
+    }
+
+    private static func dbToLinear(_ decibels: Double) -> Double {
+        return pow(10.0, decibels / 20.0)
+    }
+
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
+
+    private static func defaultRampSamples(sampleRate: Double) -> Int {
+        let ramp = Int((sampleRate * 0.005).rounded())
+        return max(1, min(ramp, 4096))
+    }
+}
+
+/// Timeline-coherent hyperbolic chirp generator implementation
+private class HyperbolicChirpAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .hyperbolicChirp
+    let inputPorts: [String] = []
+    let outputPorts: [String] = ["signal"]
+
+    private var startFrequency: Double
+    private var endFrequency: Double
+    private var bandwidth: Double
+    private var amplitudeDecibels: Double
+    private var amplitudeLinear: Double
+    private var chirpEngine: ChirpEnvelopeEngine = ChirpEnvelopeEngine()
+    private var timelineAnchorSample: UInt64 = 0
+
+    private static let minimumFrequency: Double = 1.0
+    private static let maximumFrequency: Double = 24_000.0
+    private static let minimumSweepRate: Double = 10.0
+    private static let maximumSweepRate: Double = 192_000.0
+    private static let minimumDuration: Double = 1.0e-3
+    private static let maximumDuration: Double = 30.0
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        let startParam = block.parameters["startFrequency"]?.value ?? 1000.0
+        let endParam = block.parameters["endFrequency"]?.value ?? 10_000.0
+        let bandwidthParam = block.parameters["bandwidth"]?.value ?? 5_000.0
+        let amplitudeDb = Self.clampAmplitudeDb(block.parameters["amplitude"]?.value ?? -6.0)
+
+        startFrequency = Self.clampFrequency(startParam)
+        endFrequency = Self.clampFrequency(endParam)
+        bandwidth = Self.clampBandwidth(bandwidthParam)
+        amplitudeDecibels = amplitudeDb
+        amplitudeLinear = Self.dbToLinear(amplitudeDb)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0, sampleRate > 0 else { return ["signal": []] }
+
+        if startSample < timelineAnchorSample {
+            timelineAnchorSample = startSample
+            chirpEngine = ChirpEnvelopeEngine()
+        }
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        var framesRemaining = frameCount
+        var segmentStartSample = startSample
+        let rampSamples = Self.defaultRampSamples(sampleRate: sampleRate)
+        let cycleDuration = chirpDurationSeconds()
+
+        while framesRemaining > 0 {
+            let relativeStart: UInt64
+            if segmentStartSample >= timelineAnchorSample {
+                relativeStart = segmentStartSample - timelineAnchorSample
+            } else {
+                timelineAnchorSample = segmentStartSample
+                chirpEngine = ChirpEnvelopeEngine()
+                relativeStart = 0
+            }
+
+            let elapsedSeconds = Double(relativeStart) / sampleRate
+            let cycle = cycleDuration
+            let cycleOffset = cycle > 0.0 ? elapsedSeconds.truncatingRemainder(dividingBy: cycle) : 0.0
+            let secondsRemaining = cycle > 0.0 ? max(0.0, cycle - cycleOffset) : Double(framesRemaining) / sampleRate
+            let rawSamples = cycle > 0.0 ? Int((secondsRemaining * sampleRate).rounded(.down)) : framesRemaining
+            let segmentSamples = min(framesRemaining, max(1, rawSamples))
+            let segmentDuration = Double(max(segmentSamples - 1, 0)) / sampleRate
+
+            let progressStart = cycle > 0.0 ? min(1.0, max(0.0, cycleOffset / cycle)) : 0.0
+            let progressEnd = cycle > 0.0 ? min(1.0, max(0.0, (cycleOffset + segmentDuration) / cycle)) : progressStart
+
+            let frameStartFrequency = frequency(atProgress: progressStart, duration: cycle)
+            let frameEndFrequency = frequency(atProgress: progressEnd, duration: cycle)
+
+            let segment = chirpEngine.generateHyperbolicChirp(
+                frameCount: segmentSamples,
+                startSample: segmentStartSample,
+                sampleRate: sampleRate,
+                startFrequency: frameStartFrequency,
+                endFrequency: frameEndFrequency,
+                targetAmplitude: amplitudeLinear,
+                rampSamples: rampSamples
+            )
+
+            for sample in segment {
+                output.append(Float(Self.clampToAudioRange(sample)))
+            }
+
+            framesRemaining -= segmentSamples
+            segmentStartSample &+= UInt64(segmentSamples)
+        }
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "startFrequency":
+            startFrequency = Self.clampFrequency(value)
+            print("Updated parameter startFrequency = \(startFrequency) for HyperbolicChirpAudioBlock")
+        case "endFrequency":
+            endFrequency = Self.clampFrequency(value)
+            print("Updated parameter endFrequency = \(endFrequency) for HyperbolicChirpAudioBlock")
+        case "bandwidth":
+            bandwidth = Self.clampBandwidth(value)
+            print("Updated parameter bandwidth = \(bandwidth) for HyperbolicChirpAudioBlock")
+        case "amplitude":
+            let clamped = Self.clampAmplitudeDb(value)
+            amplitudeDecibels = clamped
+            amplitudeLinear = Self.dbToLinear(clamped)
+            print("Updated parameter amplitude = \(clamped) for HyperbolicChirpAudioBlock")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        timelineAnchorSample = startSample
+        chirpEngine = ChirpEnvelopeEngine()
+        print("📡 [DEBUG] HyperbolicChirpAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    /// Converts the bandwidth control (expressed as a sweep rate in Hz/s) into
+    /// a cycle duration so the time-bandwidth product stays tunable for
+    /// cross-correlation work.
+    private func chirpDurationSeconds() -> Double {
+        let sweepSpan = max(abs(endFrequency - startFrequency), Self.minimumFrequency)
+        let sweepRate = max(Self.minimumSweepRate, min(bandwidth, Self.maximumSweepRate))
+        let candidate = sweepSpan / sweepRate
+        if !candidate.isFinite { return Self.minimumDuration }
+        return min(max(candidate, Self.minimumDuration), Self.maximumDuration)
+    }
+
+    private func frequency(atProgress progress: Double, duration: Double) -> Double {
+        let clampedProgress = min(max(progress, 0.0), 1.0)
+        let positiveDuration = max(duration, Self.minimumDuration)
+        let start = max(startFrequency, Self.minimumFrequency)
+        let end = max(endFrequency, Self.minimumFrequency)
+
+        if abs(start - end) < 1.0e-9 {
+            return min(max(start, Self.minimumFrequency), Self.maximumFrequency)
+        }
+
+        let k = (start / end - 1.0) / positiveDuration
+        let time = clampedProgress * positiveDuration
+        let denominator = max(1.0 + k * time, 1.0e-9)
+        let frequency = start / denominator
+
+        if frequency.isNaN || !frequency.isFinite {
+            return min(max(end, Self.minimumFrequency), Self.maximumFrequency)
+        }
+
+        return min(max(frequency, Self.minimumFrequency), Self.maximumFrequency)
+    }
+
+    private static func clampFrequency(_ value: Double) -> Double {
+        if value.isNaN { return minimumFrequency }
+        return min(max(value, minimumFrequency), maximumFrequency)
+    }
+
+    private static func clampBandwidth(_ value: Double) -> Double {
+        if value.isNaN { return minimumSweepRate }
+        return min(max(value, minimumSweepRate), maximumSweepRate)
     }
 
     private static func clampAmplitudeDb(_ value: Double) -> Double {
