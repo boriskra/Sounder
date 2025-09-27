@@ -17,7 +17,7 @@ Sounder/
 ├── Sounder/                          # Main application target
 │   ├── Models/                       # Data models and core types
 │   │   ├── BlockEditor/              # Block editor domain models
-│   │   │   ├── BlockType.swift       # Enum defining all audio block types
+│   │   │   ├── BlockType.swift       # Enum defining all audio block types (20 types)
 │   │   │   ├── BlockCategory.swift   # UI organization categories
 │   │   │   ├── BlockConnection.swift # Audio routing connections
 │   │   │   └── ...
@@ -36,7 +36,8 @@ Sounder/
 │   │   ├── BlockCanvasViewModel.swift # Block editor logic
 │   │   └── ContentViewModel.swift    # Main app logic
 │   ├── Services/                     # Business logic and audio processing
-│   │   ├── AudioBlocks/              # Audio processing implementations
+│   │   ├── AudioBlockService.swift   # Main service containing ALL AudioBlock implementations
+│   │   ├── AudioBlocks/              # Individual AudioBlock files (some implementations)
 │   │   │   ├── DSP/                  # Shared DSP utilities
 │   │   │   │   ├── OscillatorPhaseAccumulator.swift # Timeline-coherent phase calculation
 │   │   │   │   ├── GainAndSmoothing.swift # Parameter smoothing utilities
@@ -44,12 +45,12 @@ Sounder/
 │   │   │   │   ├── ChirpEnvelopeEngine.swift # Frequency sweep generation
 │   │   │   │   ├── BiquadFilterCore.swift # Digital filter implementations
 │   │   │   │   └── SignalAnalysisKit.swift # Analysis utilities
-│   │   │   ├── SineOscillatorBlock.swift # Sine wave generator
-│   │   │   ├── SawtoothOscillatorBlock.swift # Sawtooth generator
-│   │   │   └── ...
-│   │   ├── AudioBlockService.swift   # Main audio processing service
+│   │   │   ├── SineOscillatorBlock.swift # Standalone implementation
+│   │   │   ├── SpectrumAnalyzerBlock.swift # Analysis block
+│   │   │   └── ... (other standalone implementations)
 │   │   ├── BlockManagerService.swift # Block lifecycle management
-│   │   ├── AudioTimeline.swift       # Global timeline management
+│   │   ├── AVFAudioService.swift     # Real audio service implementation
+│   │   ├── MockAudioService.swift    # Mock for testing (not production!)
 │   │   ├── AudioGraphScheduler.swift # Audio graph execution
 │   │   └── ...
 │   ├── ContentView.swift             # Root SwiftUI view
@@ -270,9 +271,16 @@ func testAudioProcessing_WithDisconnectedInputs_ReturnsExpectedOutput()
 
 ### Adding New Block Types
 
+**IMPORTANT**: AudioBlock implementations can be in two locations:
+- **Embedded in AudioBlockService.swift** (most implementations as private classes)
+- **Standalone files** in `Services/AudioBlocks/` (some complex blocks)
+
+Steps to add new block types:
 1. **Add to BlockType enum** in `Models/BlockEditor/BlockType.swift`
-2. **Create block implementation** in `Services/AudioBlocks/`
-3. **Add to createAudioBlock()** in `AudioBlockService.swift`
+2. **Create block implementation** either:
+   - As private class in `AudioBlockService.swift` (preferred for most blocks)
+   - As standalone file in `Services/AudioBlocks/` (for complex analysis blocks)
+3. **Add to createAudioBlock() switch** in `AudioBlockService.swift`
 4. **Update UI components** if needed (icons, descriptions)
 5. **Write comprehensive tests**
 
@@ -398,6 +406,46 @@ Follow the established pattern:
 - Implement proper error handling and loading states
 - Maintain accessibility support
 
+## Current Implementation Status (December 2024)
+
+### AudioBlock Implementation Progress: 85% Complete (17/20)
+
+**✅ IMPLEMENTED (17 blocks) - All in AudioBlockService.swift as private classes:**
+- SineOscillatorAudioBlock, SawtoothOscillatorAudioBlock, SquareOscillatorAudioBlock
+- LinearChirpAudioBlock, HyperbolicChirpAudioBlock
+- PinkNoiseAudioBlock, WhiteNoiseAudioBlock, TriangleOscillatorAudioBlock
+- LowPassFilterAudioBlock, HighPassFilterAudioBlock, BandPassFilterAudioBlock
+- MixerAudioBlock, AmplifierAudioBlock
+- AudioOutputAudioBlock, FrequencyModulatorAudioBlock, RingModulatorAudioBlock, AmplitudeModulatorAudioBlock
+
+**❌ MISSING (3 analysis blocks):**
+- SpectrumAnalyzerAudioBlock *(complex FFT analysis)*
+- LevelMeterAudioBlock *(RMS/peak level measurement)*
+- FrequencyCounterAudioBlock *(frequency detection algorithms)*
+
+### Known Critical Issues
+
+**🚨 PRIORITY 1 - BLOCKERS:**
+1. **Mock services used in production views** - Views use `MockAudioBlockService()` instead of real audio processing
+   - Files: BlockView.swift, BlockCanvasView.swift, AudioDeviceView.swift, BlockLibraryView.swift, ParameterControlsView.swift
+   - **Impact**: Users get fake functionality instead of real audio processing
+
+**🔧 PRIORITY 2 - MISSING FUNCTIONALITY:**
+2. **Missing switch cases** for 3 analysis blocks in `AudioBlockService.createAudioBlock()`
+3. **Stub implementations**:
+   - XML import in ConfigurationPersistenceService.swift
+   - Template creation in BlockLibraryView.swift
+   - Parameter frequency extraction in AVFAudioService.swift
+
+### Service Architecture Notes
+
+**Real vs Mock Services:**
+- **Production**: Use `AVFAudioService()` for real audio processing
+- **Testing**: Use `MockAudioService()` for unit tests only
+- **Views**: Should inject real services, not instantiate mocks directly
+
+**CRITICAL**: Many SwiftUI views directly instantiate mock services in their body or previews, which causes production users to get non-functional audio processing.
+
 ## Critical Success Factors
 
 1. **Always maintain timeline coherence** in audio processing
@@ -407,5 +455,7 @@ Follow the established pattern:
 5. **Document performance characteristics** and limitations
 6. **Validate all parameters** with appropriate error handling
 7. **Maintain backward compatibility** when possible
+8. **🚨 NEVER use mock services in production views** - Always inject real services
+9. **⚠️ Check AudioBlockService.swift first** - Most blocks are implemented as private classes, not separate files
 
 This guide should enable any AI agent to understand the project structure, follow established patterns, and make appropriate technical decisions when extending or modifying the Sounder codebase.

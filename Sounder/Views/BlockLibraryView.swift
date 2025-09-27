@@ -594,5 +594,5 @@ struct BlockTemplate {
 }
 
 #Preview {
-    BlockLibraryView(blockManager: BlockManagerServiceImpl(audioService: MockAudioBlockService()))
+    BlockLibraryView(blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()))
 }

@@ -780,7 +780,7 @@ enum ParameterControlType {
     )
 
     ParameterControlsView(
-        blockManager: BlockManagerServiceImpl(audioService: MockAudioBlockService()),
+        blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()),
         selectedBlock: sampleBlock
     )
         .onAppear {

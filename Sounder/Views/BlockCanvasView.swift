@@ -408,7 +408,7 @@ struct BlockCanvasView: View {
 }
 
 #Preview {
-    let audioService = MockAudioBlockService()
+    let audioService = AudioBlockServiceImpl()
     let blockManager = BlockManagerServiceImpl(audioService: audioService)
     let canvasService = BlockCanvasServiceImpl(blockManagerService: blockManager)
 
