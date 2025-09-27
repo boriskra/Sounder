@@ -504,6 +504,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return LowPassFilterAudioBlock(block: block)
         case .highPassFilter:
             return HighPassFilterAudioBlock(block: block)
+        case .bandPassFilter:
+            return BandPassFilterAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -1999,6 +2001,130 @@ private class HighPassFilterAudioBlock: AudioBlock {
     private static func clampResonance(_ value: Double) -> Double {
         guard value.isFinite else { return 0.707 }
         return min(max(value, 0.1), 12.0)
+    }
+}
+
+/// Timeline-coherent band-pass filter using shared biquad core
+private class BandPassFilterAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .bandPassFilter
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["output"]
+
+    private var centerFrequency: Double
+    private var qFactor: Double
+    private var lastSampleRate: Double
+    private let filterCore: BiquadFilterCore
+
+    init(block: SignalBlock) {
+        id = block.id
+        let centerParam = block.parameters["centerFrequency"]?.value ?? 1_000.0
+        let qParam = block.parameters["qFactor"]?.value ?? 1.0
+        lastSampleRate = 48_000.0
+        centerFrequency = Self.sanitizeFrequency(centerParam)
+        qFactor = Self.clampQFactor(qParam)
+        filterCore = BiquadFilterCore.createBandpass(frequency: centerFrequency, q: qFactor)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let localSampleRate: Double
+        if sampleRate.isFinite, sampleRate > 0 {
+            lastSampleRate = sampleRate
+            localSampleRate = sampleRate
+        } else {
+            localSampleRate = lastSampleRate
+        }
+
+        let effectiveCenter = Self.effectiveFrequency(for: centerFrequency, sampleRate: localSampleRate)
+        centerFrequency = Self.sanitizeFrequency(centerFrequency)
+        let effectiveQ = Self.clampQFactor(qFactor)
+
+        let inputSignal = inputs["input"] ?? []
+        var doubleBuffer = [Double](repeating: 0.0, count: frameCount)
+
+        if !inputSignal.isEmpty {
+            let copyCount = min(frameCount, inputSignal.count)
+            for index in 0..<copyCount {
+                doubleBuffer[index] = Double(inputSignal[index])
+            }
+        }
+
+        let filtered = filterCore.processAudio(
+            samples: doubleBuffer,
+            startSample: startSample,
+            sampleRate: localSampleRate,
+            filterType: .bandpass,
+            frequency: effectiveCenter,
+            q: effectiveQ,
+            gain: 0.0
+        )
+
+        let output = filtered.map { sample -> Float in
+            if sample > 1.0 { return 1.0 }
+            if sample < -1.0 { return -1.0 }
+            return Float(sample)
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "centerFrequency":
+            centerFrequency = Self.sanitizeFrequency(value)
+            print("📶 [DEBUG] BandPassFilterAudioBlock.setParameter(centerFrequency) = \(centerFrequency)Hz")
+        case "qFactor":
+            qFactor = Self.clampQFactor(value)
+            print("📶 [DEBUG] BandPassFilterAudioBlock.setParameter(qFactor) = \(qFactor)")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        filterCore.reset(to: startSample)
+        lastSampleRate = sampleRate
+        centerFrequency = Self.sanitizeFrequency(centerFrequency)
+        print("📶 [DEBUG] BandPassFilterAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
+    }
+
+    func reset() {
+        filterCore.reset()
+        lastSampleRate = 48_000.0
+        centerFrequency = Self.sanitizeFrequency(centerFrequency)
+    }
+
+    private static func sanitizeFrequency(_ value: Double) -> Double {
+        guard value.isFinite else { return 1_000.0 }
+        return min(max(value, 10.0), 40_000.0)
+    }
+
+    private static func effectiveFrequency(for value: Double, sampleRate: Double) -> Double {
+        let sanitized = sanitizeFrequency(value)
+        guard sampleRate.isFinite, sampleRate > 0 else { return sanitized }
+        let maxAllowed = max(sampleRate * 0.49, 10.0)
+        return min(sanitized, maxAllowed)
+    }
+
+    private static func clampQFactor(_ value: Double) -> Double {
+        guard value.isFinite else { return 1.0 }
+        return min(max(value, 0.1), 100.0)
     }
 }
 
