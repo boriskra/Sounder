@@ -494,6 +494,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return LinearChirpAudioBlock(block: block)
         case .hyperbolicChirp:
             return HyperbolicChirpAudioBlock(block: block)
+        case .frequencyModulator:
+            return FrequencyModulatorAudioBlock(block: block)
         case .amplitudeModulator:
             return AmplitudeModulatorAudioBlock(block: block)
         case .audioOutput:
@@ -1795,6 +1797,151 @@ private class AudioOutputAudioBlock: AudioBlock {
         // Legacy reset method
         reset(to: 0, sampleRate: 48000.0)
     }
+}
+
+/// Timeline-coherent frequency modulator implementation
+private class FrequencyModulatorAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .frequencyModulator
+    let inputPorts: [String] = ["carrier", "modulation"]
+    let outputPorts: [String] = ["output"]
+
+    private var deviation: Double = 1_000.0
+    private var lastCarrierSample: Double?
+    private var lastCarrierSampleIndex: UInt64?
+    private var lastPositiveZeroCrossing: Double?
+    private var lastEstimatedCarrierFrequency: Double = 440.0
+
+    init(block: SignalBlock) {
+        id = block.id
+        if let deviationParam = block.parameters["deviation"] {
+            deviation = Self.clampDeviation(deviationParam.value)
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let carrierInput = inputs["carrier"] ?? []
+        let modulationInput = inputs["modulation"] ?? []
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let carrierSample = frame < carrierInput.count ? Double(carrierInput[frame]) : nil
+            let modulationSample = frame < modulationInput.count ? Double(modulationInput[frame]) : 0.0
+            let clampedModulation = max(-1.0, min(1.0, modulationSample))
+
+            let carrierFrequency = estimateCarrierFrequency(
+                sampleIndex: sampleIndex,
+                currentSample: carrierSample,
+                sampleRate: sampleRate
+            )
+
+            let instantaneousFrequency = Self.clampFrequency(
+                carrierFrequency + deviation * clampedModulation,
+                sampleRate: sampleRate
+            )
+
+            let time = Double(sampleIndex) / sampleRate
+            let phase = Self.twoPi * instantaneousFrequency * time
+            let sampleValue = sin(phase)
+
+            output.append(Float(Self.clampToAudioRange(sampleValue)))
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "deviation":
+            deviation = Self.clampDeviation(value)
+            print("📡 [DEBUG] FrequencyModulatorAudioBlock.setParameter(deviation) = \(deviation)Hz")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        lastCarrierSample = nil
+        lastCarrierSampleIndex = nil
+        lastPositiveZeroCrossing = nil
+        lastEstimatedCarrierFrequency = 440.0
+        print("📡 [DEBUG] FrequencyModulatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    private func estimateCarrierFrequency(
+        sampleIndex: UInt64,
+        currentSample: Double?,
+        sampleRate: Double
+    ) -> Double {
+        guard let currentSample = currentSample, currentSample.isFinite else {
+            return lastEstimatedCarrierFrequency
+        }
+
+        if let previousSample = lastCarrierSample,
+           let previousIndex = lastCarrierSampleIndex,
+           previousSample <= 0.0,
+           currentSample > 0.0 {
+            let denom = abs(previousSample) + abs(currentSample)
+            let crossingOffset = denom > 0.0 ? abs(previousSample) / denom : 0.0
+            let crossingPosition = Double(previousIndex) + crossingOffset
+
+            if let lastCrossing = lastPositiveZeroCrossing {
+                let periodSamples = crossingPosition - lastCrossing
+                if periodSamples > 0.0 {
+                    let estimated = sampleRate / periodSamples
+                    lastEstimatedCarrierFrequency = Self.clampFrequency(estimated, sampleRate: sampleRate)
+                }
+            }
+
+            lastPositiveZeroCrossing = crossingPosition
+        }
+
+        lastCarrierSample = currentSample
+        lastCarrierSampleIndex = sampleIndex
+        return lastEstimatedCarrierFrequency
+    }
+
+    private static func clampDeviation(_ value: Double) -> Double {
+        if value.isNaN { return 1_000.0 }
+        return min(max(value, 0.0), 10_000.0)
+    }
+
+    private static func clampFrequency(_ value: Double, sampleRate: Double) -> Double {
+        if value.isNaN { return 0.0 }
+        let nyquist = sampleRate / 2.0
+        return min(max(value, 0.0), nyquist)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
+
+    private static let twoPi = 2.0 * Double.pi
 }
 
 /// Timeline-coherent amplitude modulator implementation
