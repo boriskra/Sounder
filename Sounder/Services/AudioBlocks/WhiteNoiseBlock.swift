@@ -4,9 +4,13 @@ import GameplayKit
 /// High-quality white noise generator with mathematical precision
 /// Provides flat frequency response across the audio spectrum
 public class WhiteNoiseBlock: AudioBlock {
+    /// Unique identifier for this white noise generator instance.
     public let id: UUID
+    /// Declares the block category used when registering with the editor.
     public let type: BlockType = .whiteNoise
+    /// Supported input port keys exposed to the patching system.
     public let inputPorts: [String] = ["amplitude"]
+    /// Output port keys published by the generator.
     public let outputPorts: [String] = ["signal"]
 
     // Noise generation parameters
@@ -32,12 +36,16 @@ public class WhiteNoiseBlock: AudioBlock {
     private var frequencyWeighting: [Double] = []
     private var filterCoefficients: [Double] = []
 
+    /// Initializes the white noise generator using persisted block configuration.
+    /// - Parameters:
+    ///   - signalBlock: The serialized signal block backing this instance.
+    ///   - sampleRate: The output sample rate in hertz used for generation.
     public init(signalBlock: SignalBlock, sampleRate: Double = 48000.0) {
         self.id = signalBlock.id
         self.sampleRate = sampleRate
 
         // Initialize high-quality random number generator
-        let twisterSource = GKMersenneTwisterRandomSource()
+        let twisterSource: GKMersenneTwisterRandomSource = GKMersenneTwisterRandomSource()
         twisterSource.seed = UInt64(Date().timeIntervalSince1970 * 1000) // Millisecond precision seed
         randomSource = twisterSource
 
@@ -64,26 +72,31 @@ public class WhiteNoiseBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    /// Renders the requested number of frames into a single white noise buffer.
+    /// - Parameters:
+    ///   - inputs: The currently connected modulation buffers, keyed by port name.
+    ///   - frameCount: The number of frames that should be produced.
+    /// - Returns: A dictionary containing the generated signal buffer.
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         var outputBuffer: [Float] = []
         outputBuffer.reserveCapacity(frameCount)
 
-        let amplitudeModulation = inputs["amplitude"]
+        let amplitudeModulation: [Float]? = inputs["amplitude"]
 
         for frameIndex in 0..<frameCount {
             // Apply amplitude modulation if present
-            var currentAmplitude = _amplitude
+            var currentAmplitude: Double = _amplitude
             if let ampMod = amplitudeModulation, frameIndex < ampMod.count {
-                let modDepth = 0.8 // 80% modulation depth
+                let modDepth: Double = 0.8 // 80% modulation depth
                 currentAmplitude = _amplitude * (1.0 + modDepth * Double(ampMod[frameIndex]))
                 currentAmplitude = max(0.0, min(1.0, currentAmplitude))
             }
 
             // Generate white noise sample
-            let noiseSample = generateWhiteNoiseSample(amplitude: currentAmplitude)
+            let noiseSample: Double = generateWhiteNoiseSample(amplitude: currentAmplitude)
 
             // Apply bandwidth filtering if needed
-            let filteredSample = _isFiltered ? applyBandwidthFilter(noiseSample) : noiseSample
+            let filteredSample: Double = _isFiltered ? applyBandwidthFilter(noiseSample) : noiseSample
 
             outputBuffer.append(Float(filteredSample))
 
@@ -95,10 +108,14 @@ public class WhiteNoiseBlock: AudioBlock {
         return ["signal": outputBuffer]
     }
 
+    /// Applies a parameter update originating from the editor UI.
+    /// - Parameters:
+    ///   - name: The canonical parameter key to mutate.
+    ///   - value: The new value expressed in the parameter's native units.
     public func setParameter(name: String, value: Double) {
         switch name {
         case "amplitude":
-            let clampedDb = max(-60.0, min(0.0, value))
+            let clampedDb: Double = max(-60.0, min(0.0, value))
             _amplitude = pow(10.0, clampedDb / 20.0)
 
         case "bandwidth":
@@ -113,6 +130,7 @@ public class WhiteNoiseBlock: AudioBlock {
         }
     }
 
+    /// Reseeds the generator and clears accumulated statistics.
     public func reset() {
         // Reseed random number generator
         if let twisterSource = randomSource as? GKMersenneTwisterRandomSource {
@@ -137,11 +155,11 @@ public class WhiteNoiseBlock: AudioBlock {
     /// Generates a single white noise sample
     private func generateWhiteNoiseSample(amplitude: Double) -> Double {
         // Generate random integer and convert to floating point
-        let randomInt = uniformDistribution.nextInt()
-        let normalizedRandom = Double(randomInt) / (pow(2.0, 31.0) - 1.0)
+        let randomInt: Int = uniformDistribution.nextInt()
+        let normalizedRandom: Double = Double(randomInt) / (pow(2.0, 31.0) - 1.0)
 
         // Apply amplitude scaling
-        let noiseSample = normalizedRandom * amplitude
+        let noiseSample: Double = normalizedRandom * amplitude
 
         // Ensure sample is within bounds
         return max(-1.0, min(1.0, noiseSample))
@@ -150,12 +168,12 @@ public class WhiteNoiseBlock: AudioBlock {
     /// Sets up bandwidth limiting filter
     private func setupBandwidthFilter() {
         // Simple lowpass filter for bandwidth limiting
-        let cutoffFrequency = _bandwidth
-        let nyquist = sampleRate / 2.0
-        let normalizedCutoff = cutoffFrequency / nyquist
+        let cutoffFrequency: Double = _bandwidth
+        let nyquist: Double = sampleRate / 2.0
+        let normalizedCutoff: Double = cutoffFrequency / nyquist
 
         // First-order lowpass filter coefficient
-        let alpha = exp(-2.0 * Double.pi * normalizedCutoff)
+        let alpha: Double = exp(-2.0 * Double.pi * normalizedCutoff)
         filterCoefficients = [1.0 - alpha, alpha]
     }
 
@@ -186,9 +204,10 @@ public class WhiteNoiseBlock: AudioBlock {
         amplitudeSquaredSum = 0.0
     }
 
-    /// Gets current noise quality metrics
+    /// Returns the latest calculated noise quality metrics.
+    /// - Returns: A structure describing average amplitude and related statistics.
     public func getNoiseQuality() -> WhiteNoiseQuality {
-        let samplesPeriod = sampleCount - lastStatisticsReset
+        let samplesPeriod: UInt64 = sampleCount - lastStatisticsReset
         guard samplesPeriod > 0 else {
             return WhiteNoiseQuality(
                 meanAmplitude: 0.0,
@@ -200,14 +219,14 @@ public class WhiteNoiseBlock: AudioBlock {
             )
         }
 
-        let meanAmplitude = amplitudeSum / Double(samplesPeriod)
-        let rmsAmplitude = sqrt(amplitudeSquaredSum / Double(samplesPeriod))
-        let crestFactor = calculateCrestFactor()
-        let spectralFlatness = calculateSpectralFlatness()
-        let randomnessQuality = calculateRandomnessQuality()
+        let meanAmplitude: Double = amplitudeSum / Double(samplesPeriod)
+        let rmsAmplitude: Double = sqrt(amplitudeSquaredSum / Double(samplesPeriod))
+        let crestFactor: Double = calculateCrestFactor()
+        let spectralFlatness: Double = calculateSpectralFlatness()
+        let randomnessQuality: Double = calculateRandomnessQuality()
 
         // Check if noise meets quality standards
-        let isWithinTolerance = validateNoiseQuality(
+        let isWithinTolerance: Bool = validateNoiseQuality(
             meanAmplitude: meanAmplitude,
             rmsAmplitude: rmsAmplitude,
             crestFactor: crestFactor
@@ -225,11 +244,11 @@ public class WhiteNoiseBlock: AudioBlock {
 
     /// Calculates crest factor (peak-to-RMS ratio)
     private func calculateCrestFactor() -> Double {
-        let samplesPeriod = sampleCount - lastStatisticsReset
+        let samplesPeriod: UInt64 = sampleCount - lastStatisticsReset
         guard samplesPeriod > 0 else { return 0.0 }
 
-        let rms = sqrt(amplitudeSquaredSum / Double(samplesPeriod))
-        let peak = _amplitude // Maximum possible amplitude
+        let rms: Double = sqrt(amplitudeSquaredSum / Double(samplesPeriod))
+        let peak: Double = _amplitude // Maximum possible amplitude
 
         return peak / max(rms, 0.001) // Avoid division by zero
     }
@@ -248,9 +267,9 @@ public class WhiteNoiseBlock: AudioBlock {
         // 2. Generator algorithm (Mersenne Twister is high quality)
         // 3. Distribution uniformity
 
-        let seedQuality = 1.0 // High-resolution time seed
-        let algorithmQuality = 0.98 // Mersenne Twister quality
-        let distributionQuality = 0.99 // Uniform distribution quality
+        let seedQuality: Double = 1.0 // High-resolution time seed
+        let algorithmQuality: Double = 0.98 // Mersenne Twister quality
+        let distributionQuality: Double = 0.99 // Uniform distribution quality
 
         return (seedQuality + algorithmQuality + distributionQuality) / 3.0
     }
@@ -262,20 +281,21 @@ public class WhiteNoiseBlock: AudioBlock {
         // 2. RMS should match theoretical expectation
         // 3. Crest factor should be in expected range for Gaussian-like noise
 
-        let dcTolerance = 0.01 * _amplitude
-        let rmsTolerance = 0.05 * _amplitude
-        let crestFactorRange = 6.0...12.0 // Typical range for white noise
+        let dcTolerance: Double = 0.01 * _amplitude
+        let rmsTolerance: Double = 0.05 * _amplitude
+        let crestFactorRange: ClosedRange<Double> = 6.0...12.0 // Typical range for white noise
 
-        let dcOK = abs(meanAmplitude) < dcTolerance
-        let rmsOK = abs(rmsAmplitude - (_amplitude / sqrt(3.0))) < rmsTolerance // Uniform distribution RMS
-        let crestOK = crestFactorRange.contains(crestFactor)
+        let dcOK: Bool = abs(meanAmplitude) < dcTolerance
+        let rmsOK: Bool = abs(rmsAmplitude - (_amplitude / sqrt(3.0))) < rmsTolerance // Uniform distribution RMS
+        let crestOK: Bool = crestFactorRange.contains(crestFactor)
 
         return dcOK && rmsOK && crestOK
     }
 
     // MARK: - Performance Statistics
 
-    /// Gets performance and generation statistics
+    /// Aggregates performance counters for inspection and debugging.
+    /// - Returns: A snapshot of generator state and quality metrics.
     public func getPerformanceStats() -> WhiteNoiseStats {
         return WhiteNoiseStats(
             samplesGenerated: sampleCount,
@@ -291,22 +311,37 @@ public class WhiteNoiseBlock: AudioBlock {
 
 // MARK: - Data Structures
 
+/// Describes the statistical quality characteristics of generated white noise.
 public struct WhiteNoiseQuality {
+    /// Average absolute amplitude measured across the evaluation window.
     public let meanAmplitude: Double
+    /// Root-mean-square amplitude used for loudness estimation.
     public let rmsAmplitude: Double
+    /// Peak-to-RMS ratio representing the crest factor.
     public let crestFactor: Double
+    /// Proxy for spectral uniformity; 1.0 equals perfectly flat spectrum.
     public let spectralFlatness: Double
+    /// Aggregate score reflecting randomness entropy in the generator.
     public let randomnessQuality: Double
+    /// Indicates whether all quality metrics fall within expected tolerances.
     public let isWithinTolerance: Bool
 }
 
+/// Captures operational statistics about an instance of `WhiteNoiseBlock`.
 public struct WhiteNoiseStats {
+    /// Total number of samples emitted since creation or last reset.
     public let samplesGenerated: UInt64
+    /// Current linear amplitude setting of the generator.
     public let currentAmplitude: Double
+    /// Bandwidth limit applied to the white noise source in hertz.
     public let bandwidth: Double
+    /// Flag indicating whether bandwidth filtering is currently enabled.
     public let isFiltered: Bool
+    /// Description of the pseudorandom generator algorithm in use.
     public let generatorType: String
+    /// Description of the probability distribution applied to samples.
     public let distributionType: String
+    /// Latest computed quality metrics for the generated signal.
     public let noiseQuality: WhiteNoiseQuality
 }
 
@@ -315,7 +350,7 @@ public struct WhiteNoiseStats {
 extension WhiteNoiseBlock {
     /// Creates a calibrated white noise generator for testing
     public static func createCalibrationNoise(amplitude: Double = -20.0) -> WhiteNoiseBlock {
-        let signalBlock = SignalBlock(
+        let signalBlock: SignalBlock = SignalBlock(
             type: .whiteNoise,
             title: "Calibration Noise \(Int(amplitude))dB",
             position: CGPoint.zero,
@@ -337,7 +372,7 @@ extension WhiteNoiseBlock {
 
     /// Creates a band-limited white noise generator
     public static func createBandLimited(bandwidth: Double, amplitude: Double = -20.0) -> WhiteNoiseBlock {
-        let signalBlock = SignalBlock(
+        let signalBlock: SignalBlock = SignalBlock(
             type: .whiteNoise,
             title: "Band-Limited Noise \(Int(bandwidth))Hz",
             position: CGPoint.zero,
