@@ -73,7 +73,7 @@ class ConfigurationPersistenceService: ObservableObject {
         try validateConfiguration(configuration)
 
         // Create persistable configuration
-        let persistableConfig = PersistableConfiguration(from: configuration, version: currentVersion)
+        let persistableConfig: PersistableConfiguration = PersistableConfiguration(from: configuration, version: currentVersion)
 
         // Create backup if file exists
         if FileManager.default.fileExists(atPath: url.path) {
@@ -81,7 +81,7 @@ class ConfigurationPersistenceService: ObservableObject {
         }
 
         do {
-            let data = try encoder.encode(persistableConfig)
+            let data: Data = try encoder.encode(persistableConfig)
             try data.write(to: url, options: .atomic)
 
             print("Configuration saved to: \(url.path)")
@@ -97,20 +97,20 @@ class ConfigurationPersistenceService: ObservableObject {
     /// - Returns: The URL where the configuration was saved
     /// - Throws: ConfigurationPersistenceError if save fails
     func saveConfigurationWithAutoName(_ configuration: BlockConfiguration) async throws -> URL {
-        let filename = generateAutoFilename(for: configuration)
-        let url = configurationsDirectory.appendingPathComponent(filename)
+        let filename: String = generateAutoFilename(for: configuration)
+        let url: URL = configurationsDirectory.appendingPathComponent(filename)
 
         try await saveConfiguration(configuration, to: url)
         return url
     }
 
     private func generateAutoFilename(for configuration: BlockConfiguration) -> String {
-        let dateFormatter = DateFormatter()
+        let dateFormatter: DateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let timestamp = dateFormatter.string(from: Date())
+        let timestamp: String = dateFormatter.string(from: Date())
 
-        let blockCount = configuration.blocks.count
-        let baseName = "Configuration_\(blockCount)blocks_\(timestamp)"
+        let blockCount: Int = configuration.blocks.count
+        let baseName: String = "Configuration_\(blockCount)blocks_\(timestamp)"
 
         return "\(baseName).\(fileExtension)"
     }
@@ -127,14 +127,14 @@ class ConfigurationPersistenceService: ObservableObject {
         }
 
         do {
-            let data = try Data(contentsOf: url)
-            let persistableConfig = try decoder.decode(PersistableConfiguration.self, from: data)
+            let data: Data = try Data(contentsOf: url)
+            let persistableConfig: PersistableConfiguration = try decoder.decode(PersistableConfiguration.self, from: data)
 
             // Validate version compatibility
             try validateVersion(persistableConfig.version)
 
             // Convert to runtime configuration
-            let configuration = try persistableConfig.toConfiguration()
+            let configuration: BlockConfiguration = try persistableConfig.toConfiguration()
 
             // Validate loaded configuration
             try validateConfiguration(configuration)
@@ -179,25 +179,25 @@ class ConfigurationPersistenceService: ObservableObject {
 
     private func exportAsJSON(_ configuration: BlockConfiguration, to url: URL) async throws {
         // Export with additional metadata
-        let exportData = ExportData(
+        let exportData: ExportData = ExportData(
             format: "json",
             exportedAt: Date(),
             exportedBy: "Sounder",
             configuration: PersistableConfiguration(from: configuration, version: currentVersion)
         )
 
-        let data = try encoder.encode(exportData)
+        let data: Data = try encoder.encode(exportData)
         try data.write(to: url)
     }
 
     private func exportAsXML(_ configuration: BlockConfiguration, to url: URL) async throws {
-        let xmlExporter = XMLConfigurationExporter()
-        let xmlContent = xmlExporter.export(configuration)
+        let xmlExporter: XMLConfigurationExporter = XMLConfigurationExporter()
+        let xmlContent: String = xmlExporter.export(configuration)
         try xmlContent.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func exportAsPreset(_ configuration: BlockConfiguration, to url: URL) async throws {
-        let preset = ConfigurationPreset(
+        let preset: ConfigurationPreset = ConfigurationPreset(
             name: url.deletingPathExtension().lastPathComponent,
             description: "Exported from Sounder",
             category: "User Presets",
@@ -211,13 +211,13 @@ class ConfigurationPersistenceService: ObservableObject {
             )
         )
 
-        let data = try encoder.encode(preset)
+        let data: Data = try encoder.encode(preset)
         try data.write(to: url)
     }
 
     private func exportAsCSV(_ configuration: BlockConfiguration, to url: URL) async throws {
-        let csvExporter = CSVConfigurationExporter()
-        let csvContent = csvExporter.export(configuration)
+        let csvExporter: CSVConfigurationExporter = CSVConfigurationExporter()
+        let csvContent: String = csvExporter.export(configuration)
         try csvContent.write(to: url, atomically: true, encoding: .utf8)
     }
 
@@ -230,7 +230,7 @@ class ConfigurationPersistenceService: ObservableObject {
     /// - Returns: The imported configuration
     /// - Throws: ConfigurationPersistenceError if import fails
     func importConfiguration(from url: URL, format: ImportFormat? = nil) async throws -> BlockConfiguration {
-        let detectedFormat = format ?? detectFormat(from: url)
+        let detectedFormat: ImportFormat = format ?? detectFormat(from: url)
 
         switch detectedFormat {
         case .json:
@@ -245,7 +245,7 @@ class ConfigurationPersistenceService: ObservableObject {
     }
 
     private func importFromJSON(_ url: URL) async throws -> BlockConfiguration {
-        let data = try Data(contentsOf: url)
+        let data: Data = try Data(contentsOf: url)
 
         // Try different JSON structures
         if let exportData = try? decoder.decode(ExportData.self, from: data) {
@@ -258,13 +258,13 @@ class ConfigurationPersistenceService: ObservableObject {
     }
 
     private func importFromXML(_ url: URL) async throws -> BlockConfiguration {
-        let xmlImporter = XMLConfigurationImporter()
+        let xmlImporter: XMLConfigurationImporter = XMLConfigurationImporter()
         return try xmlImporter.import(from: url)
     }
 
     private func importFromPreset(_ url: URL) async throws -> BlockConfiguration {
-        let data = try Data(contentsOf: url)
-        let preset = try decoder.decode(ConfigurationPreset.self, from: data)
+        let data: Data = try Data(contentsOf: url)
+        let preset: ConfigurationPreset = try decoder.decode(ConfigurationPreset.self, from: data)
 
         // Check compatibility
         try validatePresetCompatibility(preset.compatibility)
@@ -280,10 +280,10 @@ class ConfigurationPersistenceService: ObservableObject {
     // MARK: - Backup Management
 
     private func createBackup(of url: URL) throws {
-        let filename = url.lastPathComponent
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let backupFilename = "\(filename)_\(timestamp).\(backupExtension)"
-        let backupURL = backupsDirectory.appendingPathComponent(backupFilename)
+        let filename: String = url.lastPathComponent
+        let timestamp: String = ISO8601DateFormatter().string(from: Date())
+        let backupFilename: String = "\(filename)_\(timestamp).\(backupExtension)"
+        let backupURL: URL = backupsDirectory.appendingPathComponent(backupFilename)
 
         try FileManager.default.copyItem(at: url, to: backupURL)
 
@@ -292,15 +292,15 @@ class ConfigurationPersistenceService: ObservableObject {
     }
 
     private func cleanupOldBackups() throws {
-        let backupFiles = try FileManager.default.contentsOfDirectory(
+        let backupFiles: [URL] = try FileManager.default.contentsOfDirectory(
             at: backupsDirectory,
             includingPropertiesForKeys: [.creationDateKey],
             options: .skipsHiddenFiles
         )
 
-        let sortedBackups = backupFiles.sorted { (url1, url2) -> Bool in
-            let date1 = try? url1.resourceValues(forKeys: [.creationDateKey]).creationDate
-            let date2 = try? url2.resourceValues(forKeys: [.creationDateKey]).creationDate
+        let sortedBackups: [URL] = backupFiles.sorted { (url1, url2) -> Bool in
+            let date1: Date? = try? url1.resourceValues(forKeys: [.creationDateKey]).creationDate
+            let date2: Date? = try? url2.resourceValues(forKeys: [.creationDateKey]).creationDate
             return (date1 ?? Date.distantPast) > (date2 ?? Date.distantPast)
         }
 
@@ -319,16 +319,16 @@ class ConfigurationPersistenceService: ObservableObject {
         }
 
         // Validate block IDs are unique
-        let blockIds = configuration.blocks.map(\.id)
-        let uniqueBlockIds = Set(blockIds)
+        let blockIds: [UUID] = configuration.blocks.map(\.id)
+        let uniqueBlockIds: Set<UUID> = Set(blockIds)
         if blockIds.count != uniqueBlockIds.count {
             throw ConfigurationPersistenceError.invalidConfiguration("Duplicate block IDs found")
         }
 
         // Validate connections reference existing blocks
         for connection in configuration.connections {
-            let sourceExists = configuration.blocks.contains { $0.id == connection.sourceBlockId }
-            let targetExists = configuration.blocks.contains { $0.id == connection.destinationBlockId }
+            let sourceExists: Bool = configuration.blocks.contains { $0.id == connection.sourceBlockId }
+            let targetExists: Bool = configuration.blocks.contains { $0.id == connection.destinationBlockId }
 
             if !sourceExists {
                 throw ConfigurationPersistenceError.invalidConfiguration("Connection references missing source block: \(connection.sourceBlockId)")
@@ -350,7 +350,7 @@ class ConfigurationPersistenceService: ObservableObject {
     }
 
     private func validateVersion(_ version: String) throws {
-        let supportedVersions = ["1.0"]
+        let supportedVersions: [String] = ["1.0"]
         if !supportedVersions.contains(version) {
             throw ConfigurationPersistenceError.unsupportedVersion(version)
         }
@@ -366,7 +366,7 @@ class ConfigurationPersistenceService: ObservableObject {
     // MARK: - Format Detection
 
     private func detectFormat(from url: URL) -> ImportFormat {
-        let pathExtension = url.pathExtension.lowercased()
+        let pathExtension: String = url.pathExtension.lowercased()
 
         switch pathExtension {
         case "json": return .json
@@ -383,7 +383,7 @@ class ConfigurationPersistenceService: ObservableObject {
         var tags: [String] = []
 
         // Add tags based on block types present
-        let blockTypes = Set(configuration.blocks.map(\.type))
+        let blockTypes: Set<BlockType> = Set(configuration.blocks.map(\.type))
         for blockType in blockTypes {
             tags.append(blockType.rawValue)
         }
@@ -428,7 +428,7 @@ class ConfigurationPersistenceService: ObservableObject {
 
     /// Lists all configuration files in the default directory
     func listConfigurations() throws -> [ConfigurationFileInfo] {
-        let files = try FileManager.default.contentsOfDirectory(
+        let files: [URL] = try FileManager.default.contentsOfDirectory(
             at: configurationsDirectory,
             includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .fileSizeKey],
             options: .skipsHiddenFiles
@@ -438,7 +438,7 @@ class ConfigurationPersistenceService: ObservableObject {
             guard url.pathExtension == fileExtension else { return nil }
 
             do {
-                let resourceValues = try url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey, .fileSizeKey])
+                let resourceValues: URLResourceValues = try url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey, .fileSizeKey])
 
                 return ConfigurationFileInfo(
                     url: url,
@@ -481,8 +481,8 @@ struct PersistableConfiguration: Codable {
     }
 
     func toConfiguration() throws -> BlockConfiguration {
-        let runtimeBlocks = try blocks.map { try $0.toBlock() }
-        let runtimeConnections = try connections.map { try $0.toConnection() }
+        let runtimeBlocks: [SignalBlock] = try blocks.map { try $0.toBlock() }
+        let runtimeConnections: [Connection] = try connections.map { try $0.toConnection() }
 
         return BlockConfiguration(
             id: UUID(), // Generate new ID for loaded configuration
@@ -523,9 +523,8 @@ struct PersistableBlock: Codable {
         self.type = block.type.rawValue
         self.title = block.title
         self.position = PersistablePoint(from: block.position)
-        self.parameters = Dictionary(uniqueKeysWithValues:
-            block.parameters.map {
-                (key, value) in
+        self.parameters = Dictionary(
+            uniqueKeysWithValues: block.parameters.map { key, value in
                 (key, PersistableParameter(from: value))
             }
         )
@@ -540,9 +539,8 @@ struct PersistableBlock: Codable {
             throw ConfigurationPersistenceError.invalidConfiguration("Invalid block data")
         }
 
-        let runtimeParameters = try Dictionary(uniqueKeysWithValues:
-            parameters.map {
-                (key, value) in
+        let runtimeParameters: [String: BlockParameter] = try Dictionary(
+            uniqueKeysWithValues: parameters.map { key, value in
                 (key, try value.toParameter())
             }
         )
@@ -760,18 +758,17 @@ enum ConfigurationPersistenceError: Error, LocalizedError {
 
 // MARK: - Export Utilities
 
-
 class XMLConfigurationExporter {
     func export(_ configuration: BlockConfiguration) -> String {
-        var xml = """
+        var xml: String = """
         <?xml version="1.0" encoding="UTF-8"?>
         <SounderConfiguration version="1.0" created="\(ISO8601DateFormatter().string(from: configuration.createdDate))">
         
         """
         
         // Escape XML special characters
-        let escapedName = escapeXMLText(configuration.name)
-        let escapedDescription = escapeXMLText(configuration.metadata["description"] ?? "")
+        let escapedName: String = escapeXMLText(configuration.name)
+        let escapedDescription: String = escapeXMLText(configuration.metadata["description"] ?? "")
 
         xml += "\n  <Metadata>"
         xml += "\n    <Name>\(escapedName)</Name>"
@@ -780,7 +777,7 @@ class XMLConfigurationExporter {
 
         xml += "\n  <Blocks count=\"\(configuration.blocks.count)\">"
         for block in configuration.blocks {
-            let escapedTitle = escapeXMLText(block.title)
+            let escapedTitle: String = escapeXMLText(block.title)
             xml += "\n    <Block id=\"\(block.id)\" type=\"\(block.type.rawValue)\">"
             xml += "\n      <Title>\(escapedTitle)</Title>"
             xml += "\n      <Position x=\"\(block.position.x)\" y=\"\(block.position.y)\"/>"
@@ -815,11 +812,11 @@ class XMLConfigurationExporter {
 
 class CSVConfigurationExporter {
     func export(_ configuration: BlockConfiguration) -> String {
-        var csv = "Type,ID,Title,Position,Parameters,Status\n"
+        var csv: String = "Type,ID,Title,Position,Parameters,Status\n"
         
         // Export blocks
         for block in configuration.blocks {
-            let params = block.parameters.values.map { "\($0.name)=\($0.value)" }.joined(separator: ";")
+            let params: String = block.parameters.values.map { "\($0.name)=\($0.value)" }.joined(separator: ";")
             csv += "Block,\(block.id),\(block.title),\"(\(block.position.x),\(block.position.y))\",\"\(params)\",\(block.isActive ? "Active" : "Inactive")\n"
         }
         
