@@ -101,6 +101,10 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             if !engine.isRunning {
                 try engine.start()
                 eventPublisher.send(.engineStarted)
+                NotificationCenter.default.post(
+                    name: .audioEngineStatusChanged,
+                    object: AudioEngineStatus.running
+                )
             }
         } catch {
             throw AudioBlockError.audioEngineError("Failed to start audio engine: \(error.localizedDescription)")
@@ -113,6 +117,10 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         if engine.isRunning {
             engine.stop()
             eventPublisher.send(.engineStopped)
+            NotificationCenter.default.post(
+                name: .audioEngineStatusChanged,
+                object: AudioEngineStatus.stopped
+            )
         }
 
         // Reset all blocks
