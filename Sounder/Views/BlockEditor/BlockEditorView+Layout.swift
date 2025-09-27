@@ -1,6 +1,6 @@
 import SwiftUI
 
-private extension BlockEditorView {
+extension BlockEditorView {
     var mainCanvasArea: some View {
         VStack(spacing: 0) {
             canvasToolbar

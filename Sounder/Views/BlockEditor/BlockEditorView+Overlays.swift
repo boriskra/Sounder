@@ -1,6 +1,6 @@
 import SwiftUI
 
-private extension BlockEditorView {
+extension BlockEditorView {
     var statusBar: some View {
         HStack {
             if let statusMessage = viewModel.statusMessage {

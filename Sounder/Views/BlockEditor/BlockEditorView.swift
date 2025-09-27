@@ -2,13 +2,13 @@ import SwiftUI
 
 /// Main block editor view integrating canvas, parameter controls, and device management
 struct BlockEditorView: View {
-    @StateObject private var audioBlockService: AudioBlockServiceImpl
-    @StateObject private var blockManager: BlockManagerServiceImpl
-    @StateObject private var canvasService: BlockCanvasServiceImpl
-    @StateObject private var viewModel: BlockEditorViewModel
+    @StateObject var audioBlockService: AudioBlockServiceImpl
+    @StateObject var blockManager: BlockManagerServiceImpl
+    @StateObject var canvasService: BlockCanvasServiceImpl
+    @StateObject var viewModel: BlockEditorViewModel
 
-    @State private var showingSettings = false
-    @State private var showingAbout = false
+    @State var showingSettings = false
+    @State var showingAbout = false
 
     init() {
         let audioService = AudioBlockServiceImpl()

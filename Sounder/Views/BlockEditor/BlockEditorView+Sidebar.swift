@@ -1,6 +1,6 @@
 import SwiftUI
 
-private extension BlockEditorView {
+extension BlockEditorView {
     var rightSidebar: some View {
         VStack(spacing: 0) {
             sidebarTabs

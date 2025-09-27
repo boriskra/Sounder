@@ -1,6 +1,6 @@
 import SwiftUI
 
-private extension BlockEditorView {
+extension BlockEditorView {
     var toolbarContent: some ToolbarContent {
         Group {
             ToolbarItemGroup(placement: .primaryAction) {
