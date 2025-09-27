@@ -240,7 +240,7 @@ struct BlockView: View {
                 )
             }
         }
-        .position(
+        .offset(
             x: -blockWidth / 2 - portSize / 2,
             y: 0
         )
@@ -260,7 +260,7 @@ struct BlockView: View {
                 )
             }
         }
-        .position(
+        .offset(
             x: blockWidth / 2 + portSize / 2,
             y: 0
         )
@@ -435,6 +435,7 @@ struct InputPortView: View {
                 .opacity(isHovered ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: isHovered)
         }
+        .frame(width: portSize, height: portSize)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -482,6 +483,7 @@ struct OutputPortView: View {
                 .opacity(isHovered ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: isHovered)
         }
+        .frame(width: portSize, height: portSize)
         .onHover { hovering in
             isHovered = hovering
         }
