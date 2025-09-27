@@ -17,19 +17,19 @@ extension BlockEditorView {
                     }
                 }
                 .tabItem {
-                    Image(systemName: "slider.horizontal.3")
+                    Text("Parameters")
                 }
                 .tag(SidebarTab.parameters)
 
                 AudioDeviceView(blockManager: blockManager)
                     .tabItem {
-                        Image(systemName: "speaker.wave.2")
+                        Text("Devices")
                     }
                     .tag(SidebarTab.devices)
 
                 ConfigurationPanel(viewModel: viewModel)
                     .tabItem {
-                        Image(systemName: "doc.text")
+                        Text("Config")
                     }
                     .tag(SidebarTab.configuration)
             }
