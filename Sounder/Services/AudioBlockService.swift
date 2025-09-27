@@ -494,6 +494,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return LinearChirpAudioBlock(block: block)
         case .hyperbolicChirp:
             return HyperbolicChirpAudioBlock(block: block)
+        case .amplitudeModulator:
+            return AmplitudeModulatorAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -1792,5 +1794,91 @@ private class AudioOutputAudioBlock: AudioBlock {
     func reset() {
         // Legacy reset method
         reset(to: 0, sampleRate: 48000.0)
+    }
+}
+
+/// Timeline-coherent amplitude modulator implementation
+private class AmplitudeModulatorAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .amplitudeModulator
+    let inputPorts: [String] = ["carrier", "modulation"]
+    let outputPorts: [String] = ["output"]
+
+    private var modulationDepth: Double = 1.0
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        if let depthParam = block.parameters["depth"] {
+            modulationDepth = Self.clampDepth(depthParam.value / 100.0) // Convert percentage to 0-1
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let carrierInput = inputs["carrier"] ?? Array(repeating: 0.0, count: frameCount)
+        let modulationInput = inputs["modulation"] ?? Array(repeating: 0.0, count: frameCount)
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        for frame in 0..<frameCount {
+            let carrierSample = frame < carrierInput.count ? carrierInput[frame] : 0.0
+            let modulationSample = frame < modulationInput.count ? modulationInput[frame] : 0.0
+
+            // Amplitude modulation: carrier * (1 + depth * modulation)
+            let modulatedAmplitude = 1.0 + modulationDepth * Double(modulationSample)
+            let outputSample = Double(carrierSample) * modulatedAmplitude
+
+            output.append(Float(Self.clampToAudioRange(outputSample)))
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "depth":
+            modulationDepth = Self.clampDepth(value / 100.0) // Convert percentage to 0-1
+            print("🎚️ [DEBUG] AmplitudeModulatorAudioBlock.setParameter(depth) = \(value)%")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // No internal state to reset
+        print("🎚️ [DEBUG] AmplitudeModulatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    private static func clampDepth(_ value: Double) -> Double {
+        if value.isNaN { return 1.0 }
+        return min(max(value, 0.0), 2.0) // Allow up to 200% modulation depth
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
     }
 }
