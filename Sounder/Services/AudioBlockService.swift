@@ -506,6 +506,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return HighPassFilterAudioBlock(block: block)
         case .bandPassFilter:
             return BandPassFilterAudioBlock(block: block)
+        case .mixer:
+            return MixerAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -2125,6 +2127,128 @@ private class BandPassFilterAudioBlock: AudioBlock {
     private static func clampQFactor(_ value: Double) -> Double {
         guard value.isFinite else { return 1.0 }
         return min(max(value, 0.1), 100.0)
+    }
+}
+
+/// Timeline-coherent audio mixer with individual channel level controls
+private class MixerAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .mixer
+    let inputPorts: [String] = ["input1", "input2", "input3", "input4"]
+    let outputPorts: [String] = ["output"]
+
+    private var inputLevels: [String: Double] = [:]
+    private var masterLevel: Double = 1.0
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        // Initialize input levels for each input port
+        for inputPort in inputPorts {
+            inputLevels[inputPort] = 1.0 // Default level: unity gain (0dB)
+        }
+
+        // Check for level parameters from block configuration
+        if let level1 = block.parameters["level1"]?.value {
+            inputLevels["input1"] = Self.dbToLinear(level1)
+        }
+        if let level2 = block.parameters["level2"]?.value {
+            inputLevels["input2"] = Self.dbToLinear(level2)
+        }
+        if let level3 = block.parameters["level3"]?.value {
+            inputLevels["input3"] = Self.dbToLinear(level3)
+        }
+        if let level4 = block.parameters["level4"]?.value {
+            inputLevels["input4"] = Self.dbToLinear(level4)
+        }
+        if let master = block.parameters["masterLevel"]?.value {
+            masterLevel = Self.dbToLinear(master)
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        var output = [Float](repeating: 0.0, count: frameCount)
+
+        // Mix all input signals with their respective levels
+        for inputPort in inputPorts {
+            guard let inputSignal = inputs[inputPort],
+                  let level = inputLevels[inputPort],
+                  !inputSignal.isEmpty else { continue }
+
+            let copyCount = min(frameCount, inputSignal.count)
+            for frame in 0..<copyCount {
+                let sample = Double(inputSignal[frame]) * level
+                output[frame] += Float(Self.clampToAudioRange(sample))
+            }
+        }
+
+        // Apply master level and final clamping
+        for frame in 0..<frameCount {
+            let masterSample = Double(output[frame]) * masterLevel
+            output[frame] = Float(Self.clampToAudioRange(masterSample))
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "level1":
+            inputLevels["input1"] = Self.dbToLinear(value)
+            print("🎚️ [DEBUG] MixerAudioBlock.setParameter(level1) = \(value)dB")
+        case "level2":
+            inputLevels["input2"] = Self.dbToLinear(value)
+            print("🎚️ [DEBUG] MixerAudioBlock.setParameter(level2) = \(value)dB")
+        case "level3":
+            inputLevels["input3"] = Self.dbToLinear(value)
+            print("🎚️ [DEBUG] MixerAudioBlock.setParameter(level3) = \(value)dB")
+        case "level4":
+            inputLevels["input4"] = Self.dbToLinear(value)
+            print("🎚️ [DEBUG] MixerAudioBlock.setParameter(level4) = \(value)dB")
+        case "masterLevel":
+            masterLevel = Self.dbToLinear(value)
+            print("🎚️ [DEBUG] MixerAudioBlock.setParameter(masterLevel) = \(value)dB")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // Mixer has no internal state to reset
+        print("🎚️ [DEBUG] MixerAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    private static func dbToLinear(_ dB: Double) -> Double {
+        guard dB.isFinite else { return 1.0 }
+        let clampedDb = max(-60.0, min(20.0, dB)) // Clamp to reasonable range
+        return pow(10.0, clampedDb / 20.0)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
     }
 }
 
