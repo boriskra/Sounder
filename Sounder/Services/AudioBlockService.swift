@@ -486,6 +486,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return SawtoothOscillatorAudioBlock(block: block)
         case .squareOscillator:
             return SquareOscillatorAudioBlock(block: block)
+        case .whiteNoise:
+            return WhiteNoiseAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -973,6 +975,96 @@ private class SquareOscillatorAudioBlock: AudioBlock {
 
     private static func clampDutyCycle(_ value: Double) -> Double {
         return min(max(value, 0.0), 1.0)
+    }
+}
+
+/// Timeline-coherent white noise generator implementation
+private class WhiteNoiseAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .whiteNoise
+    let inputPorts: [String] = []
+    let outputPorts: [String] = ["signal"]
+
+    private var amplitudeDecibels: Double
+    private var amplitudeLinear: Double
+    private let noiseGenerator: NoiseGeneratorBase
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        let amplitudeDB: Double = block.parameters["amplitude"]?.value ?? -12.0
+        amplitudeDecibels = amplitudeDB
+        amplitudeLinear = Self.dbToLinear(amplitudeDB)
+        noiseGenerator = NoiseGeneratorBase()
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["signal": []] }
+
+        let noiseFrame: [Double] = noiseGenerator.generate(
+            frameCount: frameCount,
+            startSample: startSample,
+            sampleRate: sampleRate
+        )
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        let baseAmplitude: Double = amplitudeLinear
+
+        for index in 0..<frameCount {
+            let scaledSample: Double = noiseFrame[index] * baseAmplitude
+            output.append(Float(Self.clampToAudioRange(scaledSample)))
+        }
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "amplitude":
+            amplitudeDecibels = value
+            amplitudeLinear = Self.dbToLinear(value)
+            print("🔊 [DEBUG] WhiteNoiseAudioBlock.setParameter(amplitude) = \(value) dB")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        noiseGenerator.reset(to: startSample)
+        print("🔊 [DEBUG] WhiteNoiseAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        noiseGenerator.reset()
+        print("🔊 [DEBUG] WhiteNoiseAudioBlock.reset() - Reset to beginning")
+    }
+
+    @inline(__always)
+    private static func dbToLinear(_ decibels: Double) -> Double {
+        return pow(10.0, decibels / 20.0)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
     }
 }
 
