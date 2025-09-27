@@ -452,18 +452,39 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             throw AudioBlockError.audioEngineError("Audio engine not initialized")
         }
 
-        // Create a simple source node that can generate audio
-        let sourceNode = AVAudioSourceNode { (_, _, frameCount, audioBufferList) -> OSStatus in
-            // Generate sine wave for testing
-            let frequency: Float = 440.0 // A4 note
-            let amplitude: Float = 0.3
-            let sampleRate: Float = 48000.0
+        // Create a source node that processes audio through the registered blocks
+        var currentPhase: Float = 0.0
+        let sourceNode = AVAudioSourceNode { [weak self] (_, _, frameCount, audioBufferList) -> OSStatus in
+            guard let self = self else { return noErr }
 
             let buffer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let sampleRate: Float = 48000.0
+
+            // Find the sine oscillator block to get current parameters
+            var frequency: Float = 440.0
+            var amplitude: Float = 0.3
+
+            for registeredBlock in self.registeredBlocks.values {
+                if registeredBlock.type == .sineOscillator {
+                    // Access the SineOscillatorAudioBlock parameters
+                    if let sineBlock = registeredBlock as? SineOscillatorAudioBlock {
+                        frequency = Float(sineBlock.getCurrentFrequency())
+                        amplitude = Float(sineBlock.getCurrentAmplitude())
+                    }
+                    break
+                }
+            }
+
+            let phaseIncrement = frequency * 2.0 * Float.pi / sampleRate
 
             for frame in 0..<Int(frameCount) {
-                let phase = Float(frame) * frequency * 2.0 * Float.pi / sampleRate
-                let sample = amplitude * sin(phase)
+                let sample = amplitude * sin(currentPhase)
+                currentPhase += phaseIncrement
+
+                // Keep phase in reasonable range
+                if currentPhase > 2.0 * Float.pi {
+                    currentPhase -= 2.0 * Float.pi
+                }
 
                 for bufferIndex in 0..<buffer.count {
                     let channelBuffer = buffer[bufferIndex]
@@ -597,8 +618,10 @@ private class SineOscillatorAudioBlock: AudioBlock {
         switch name {
         case "frequency":
             frequency = value
+            print("Updated parameter frequency = \(frequency) for block SineOscillatorAudioBlock")
         case "amplitude":
             amplitude = pow(10.0, value / 20.0) // Convert dB to linear
+            print("Updated parameter amplitude = \(value) for block SineOscillatorAudioBlock")
         default:
             break
         }
@@ -606,6 +629,15 @@ private class SineOscillatorAudioBlock: AudioBlock {
 
     func reset() {
         phase = 0.0
+    }
+
+    // Methods to access current parameter values
+    func getCurrentFrequency() -> Double {
+        return frequency
+    }
+
+    func getCurrentAmplitude() -> Double {
+        return amplitude
     }
 }
 
