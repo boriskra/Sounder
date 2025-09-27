@@ -431,7 +431,7 @@ struct InputPortView: View {
             Text(portName)
                 .font(.caption2)
                 .foregroundColor(.primary)
-                .position(x: -portSize - 4, y: 0)
+                .offset(x: -portSize - 20, y: 0)
                 .opacity(isHovered ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: isHovered)
         }
@@ -478,7 +478,7 @@ struct OutputPortView: View {
             Text(portName)
                 .font(.caption2)
                 .foregroundColor(.primary)
-                .position(x: portSize + 4, y: 0)
+                .offset(x: portSize + 20, y: 0)
                 .opacity(isHovered ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: isHovered)
         }
