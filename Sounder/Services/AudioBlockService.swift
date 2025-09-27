@@ -488,6 +488,10 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return SquareOscillatorAudioBlock(block: block)
         case .whiteNoise:
             return WhiteNoiseAudioBlock(block: block)
+        case .pinkNoise:
+            return PinkNoiseAudioBlock(block: block)
+        case .linearChirp:
+            return LinearChirpAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -975,6 +979,375 @@ private class SquareOscillatorAudioBlock: AudioBlock {
 
     private static func clampDutyCycle(_ value: Double) -> Double {
         return min(max(value, 0.0), 1.0)
+    }
+}
+
+/// Timeline-coherent linear chirp generator implementation
+private class LinearChirpAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .linearChirp
+    let inputPorts: [String] = []
+    let outputPorts: [String] = ["signal"]
+
+    private var startFrequency: Double
+    private var endFrequency: Double
+    private var durationSeconds: Double
+    private var amplitudeDecibels: Double
+    private var amplitudeLinear: Double
+    private var chirpEngine: ChirpEnvelopeEngine = ChirpEnvelopeEngine()
+    private var timelineAnchorSample: UInt64 = 0
+
+    private static let minimumDuration: Double = 1.0e-3
+    private static let minimumFrequency: Double = 1.0
+    private static let maximumFrequency: Double = 24_000.0
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        let startParam = block.parameters["startFrequency"]?.value ?? 100.0
+        let endParam = block.parameters["endFrequency"]?.value ?? 1000.0
+        let durationParam = block.parameters["duration"]?.value ?? 1.0
+        let amplitudeDb = Self.clampAmplitudeDb(block.parameters["amplitude"]?.value ?? -6.0)
+
+        startFrequency = Self.clampFrequency(startParam)
+        endFrequency = Self.clampFrequency(endParam)
+        durationSeconds = Self.clampDuration(durationParam)
+        amplitudeDecibels = amplitudeDb
+        amplitudeLinear = Self.dbToLinear(amplitudeDb)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0, sampleRate > 0 else { return ["signal": []] }
+
+        if startSample < timelineAnchorSample {
+            timelineAnchorSample = startSample
+            chirpEngine = ChirpEnvelopeEngine()
+        }
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        var framesRemaining = frameCount
+        var segmentStartSample = startSample
+        let rampSamples = Self.defaultRampSamples(sampleRate: sampleRate)
+        let cycleDuration = durationSeconds
+
+        while framesRemaining > 0 {
+            let relativeStart: UInt64
+            if segmentStartSample >= timelineAnchorSample {
+                relativeStart = segmentStartSample - timelineAnchorSample
+            } else {
+                timelineAnchorSample = segmentStartSample
+                chirpEngine = ChirpEnvelopeEngine()
+                relativeStart = 0
+            }
+
+            let elapsedSeconds = Double(relativeStart) / sampleRate
+            let cycleOffset = cycleDuration > 0 ? elapsedSeconds.truncatingRemainder(dividingBy: cycleDuration) : 0.0
+            let secondsRemaining = cycleDuration > 0 ? max(0.0, cycleDuration - cycleOffset) : Double(framesRemaining) / sampleRate
+            let rawSamples = cycleDuration > 0 ? Int((secondsRemaining * sampleRate).rounded(.down)) : framesRemaining
+            let segmentSamples = min(framesRemaining, max(1, rawSamples))
+            let segmentDuration = Double(max(segmentSamples - 1, 0)) / sampleRate
+
+            let progressStart = cycleDuration > 0 ? min(1.0, max(0.0, cycleOffset / cycleDuration)) : 0.0
+            let progressEnd = cycleDuration > 0 ? min(1.0, max(0.0, (cycleOffset + segmentDuration) / cycleDuration)) : 0.0
+
+            let frameStartFrequency = frequency(atProgress: progressStart)
+            let frameEndFrequency = frequency(atProgress: progressEnd)
+
+            let segment = chirpEngine.generateLinearChirp(
+                frameCount: segmentSamples,
+                startSample: segmentStartSample,
+                sampleRate: sampleRate,
+                startFrequency: frameStartFrequency,
+                endFrequency: frameEndFrequency,
+                targetAmplitude: amplitudeLinear,
+                rampSamples: rampSamples
+            )
+
+            for sample in segment {
+                output.append(Float(Self.clampToAudioRange(sample)))
+            }
+
+            framesRemaining -= segmentSamples
+            segmentStartSample &+= UInt64(segmentSamples)
+        }
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "startFrequency":
+            startFrequency = Self.clampFrequency(value)
+            print("Updated parameter startFrequency = \(startFrequency) for LinearChirpAudioBlock")
+        case "endFrequency":
+            endFrequency = Self.clampFrequency(value)
+            print("Updated parameter endFrequency = \(endFrequency) for LinearChirpAudioBlock")
+        case "duration":
+            durationSeconds = Self.clampDuration(value)
+            print("Updated parameter duration = \(durationSeconds) for LinearChirpAudioBlock")
+        case "amplitude":
+            let clamped = Self.clampAmplitudeDb(value)
+            amplitudeDecibels = clamped
+            amplitudeLinear = Self.dbToLinear(clamped)
+            print("Updated parameter amplitude = \(clamped) for LinearChirpAudioBlock")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        timelineAnchorSample = startSample
+        chirpEngine = ChirpEnvelopeEngine()
+        print("📡 [DEBUG] LinearChirpAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    private func frequency(atProgress progress: Double) -> Double {
+        let clampedProgress = min(max(progress, 0.0), 1.0)
+        return startFrequency + (endFrequency - startFrequency) * clampedProgress
+    }
+
+    private static func clampFrequency(_ value: Double) -> Double {
+        if value.isNaN { return minimumFrequency }
+        return min(max(value, minimumFrequency), maximumFrequency)
+    }
+
+    private static func clampDuration(_ value: Double) -> Double {
+        if value.isNaN { return minimumDuration }
+        return max(value, minimumDuration)
+    }
+
+    private static func clampAmplitudeDb(_ value: Double) -> Double {
+        if value.isNaN { return -6.0 }
+        return min(max(value, -60.0), 0.0)
+    }
+
+    private static func dbToLinear(_ decibels: Double) -> Double {
+        return pow(10.0, decibels / 20.0)
+    }
+
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
+
+    private static func defaultRampSamples(sampleRate: Double) -> Int {
+        let ramp = Int((sampleRate * 0.005).rounded())
+        return max(1, min(ramp, 4096))
+    }
+}
+
+/// Timeline-coherent pink noise generator implementation
+private class PinkNoiseAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .pinkNoise
+    let inputPorts: [String] = []
+    let outputPorts: [String] = ["signal"]
+
+    private var amplitudeDecibels: Double
+    private var amplitudeLinear: Double
+    private let noiseGenerator: NoiseGeneratorBase
+    private var filterState: PinkFilterState = PinkFilterState()
+    private var nextTimelineSample: UInt64?
+
+    private static let warmupChunkSize: UInt64 = 4096
+
+    init(block: SignalBlock) {
+        id = block.id
+
+        let amplitudeDB: Double = block.parameters["amplitude"]?.value ?? -12.0
+        amplitudeDecibels = amplitudeDB
+        amplitudeLinear = Self.dbToLinear(amplitudeDB)
+        noiseGenerator = NoiseGeneratorBase()
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["signal": []] }
+
+        alignStateIfNeeded(startSample: startSample, sampleRate: sampleRate)
+
+        let whiteFrame: [Double] = noiseGenerator.generate(
+            frameCount: frameCount,
+            startSample: startSample,
+            sampleRate: sampleRate
+        )
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        let amplitude: Double = amplitudeLinear
+
+        for sample in whiteFrame {
+            let pink: Double = filterState.process(whiteSample: sample)
+            output.append(Float(Self.clampToAudioRange(pink * amplitude)))
+        }
+
+        nextTimelineSample = startSample &+ UInt64(frameCount)
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "amplitude":
+            amplitudeDecibels = value
+            amplitudeLinear = Self.dbToLinear(value)
+            print("🔊 [DEBUG] PinkNoiseAudioBlock.setParameter(amplitude) = \(value) dB")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        noiseGenerator.reset(to: 0)
+        filterState.reset()
+        nextTimelineSample = 0
+
+        if startSample > 0 {
+            advanceFilterState(from: 0, to: startSample, sampleRate: sampleRate)
+        }
+
+        noiseGenerator.reset(to: startSample)
+        nextTimelineSample = startSample
+        print("🔊 [DEBUG] PinkNoiseAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        noiseGenerator.reset()
+        filterState.reset()
+        nextTimelineSample = 0
+        print("🔊 [DEBUG] PinkNoiseAudioBlock.reset() - Reset to beginning")
+    }
+
+    private func alignStateIfNeeded(startSample: UInt64, sampleRate: Double) {
+        if let expectedSample: UInt64 = nextTimelineSample {
+            if startSample == expectedSample {
+                return
+            }
+
+            if startSample > expectedSample {
+                advanceFilterState(from: expectedSample, to: startSample, sampleRate: sampleRate)
+                return
+            }
+
+            synchroniseFilterState(to: startSample, sampleRate: sampleRate)
+            return
+        }
+
+        synchroniseFilterState(to: startSample, sampleRate: sampleRate)
+    }
+
+    private func synchroniseFilterState(to targetSample: UInt64, sampleRate: Double) {
+        noiseGenerator.reset(to: 0)
+        filterState.reset()
+        nextTimelineSample = 0
+
+        if targetSample > 0 {
+            advanceFilterState(from: 0, to: targetSample, sampleRate: sampleRate)
+        }
+    }
+
+    private func advanceFilterState(from startSample: UInt64, to endSample: UInt64, sampleRate: Double) {
+        guard endSample > startSample else { return }
+
+        var cursor: UInt64 = startSample
+        while cursor < endSample {
+            let remaining: UInt64 = endSample &- cursor
+            let chunk: Int = Int(min(remaining, Self.warmupChunkSize))
+            if chunk <= 0 { break }
+
+            let warmupFrame: [Double] = noiseGenerator.generate(
+                frameCount: chunk,
+                startSample: cursor,
+                sampleRate: sampleRate
+            )
+
+            for sample in warmupFrame {
+                _ = filterState.process(whiteSample: sample)
+            }
+
+            cursor &+= UInt64(chunk)
+        }
+
+        nextTimelineSample = endSample
+    }
+
+    @inline(__always)
+    private static func dbToLinear(_ decibels: Double) -> Double {
+        return pow(10.0, decibels / 20.0)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
+
+    private struct PinkFilterState {
+        private var b0: Double = 0.0
+        private var b1: Double = 0.0
+        private var b2: Double = 0.0
+        private var b3: Double = 0.0
+        private var b4: Double = 0.0
+        private var b5: Double = 0.0
+        private var b6: Double = 0.0
+
+        mutating func process(whiteSample: Double) -> Double {
+            b0 = 0.99886 * b0 + whiteSample * 0.0555179
+            b1 = 0.99332 * b1 + whiteSample * 0.0750759
+            b2 = 0.96900 * b2 + whiteSample * 0.1538520
+            b3 = 0.86650 * b3 + whiteSample * 0.3104856
+            b4 = 0.55000 * b4 + whiteSample * 0.5329522
+            b5 = -0.7616 * b5 - whiteSample * 0.0168980
+            let pink: Double = b0 + b1 + b2 + b3 + b4 + b5 + b6 + whiteSample * 0.5362
+            b6 = whiteSample * 0.115926
+            return pink * 0.11
+        }
+
+        mutating func reset() {
+            b0 = 0.0
+            b1 = 0.0
+            b2 = 0.0
+            b3 = 0.0
+            b4 = 0.0
+            b5 = 0.0
+            b6 = 0.0
+        }
     }
 }
 
