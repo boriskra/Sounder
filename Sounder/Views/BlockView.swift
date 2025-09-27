@@ -281,7 +281,7 @@ struct BlockView: View {
         Circle()
             .fill(Color.green)
             .frame(width: 8, height: 8)
-            .position(x: blockWidth / 2 - 8, y: -blockHeight / 2 + 8)
+            .offset(x: blockWidth / 2 - 8, y: -blockHeight / 2 + 8)
             .opacity(isActive ? 1 : 0)
             .scaleEffect(isActive ? 1 : 0.5)
             .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isActive)
