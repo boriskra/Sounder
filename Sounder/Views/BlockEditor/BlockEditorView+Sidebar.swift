@@ -3,8 +3,6 @@ import SwiftUI
 extension BlockEditorView {
     var rightSidebar: some View {
         VStack(spacing: 0) {
-            sidebarTabs
-
             TabView(selection: $viewModel.selectedSidebarTab) {
                 Group {
                     if viewModel.showingParameterControls {
@@ -16,49 +14,25 @@ extension BlockEditorView {
                         noParametersView
                     }
                 }
+                .tabItem {
+                    Text("Parameters")
+                }
                 .tag(SidebarTab.parameters)
 
                 AudioDeviceView(blockManager: blockManager)
+                    .tabItem {
+                        Text("Devices")
+                    }
                     .tag(SidebarTab.devices)
 
                 ConfigurationPanel(viewModel: viewModel)
+                    .tabItem {
+                        Text("Config")
+                    }
                     .tag(SidebarTab.configuration)
             }
         }
         .background(Color(NSColor.controlBackgroundColor))
-    }
-
-    var sidebarTabs: some View {
-        HStack {
-            SidebarTabButton(
-                label: "Parameters",
-                isSelected: viewModel.selectedSidebarTab == .parameters
-            ) {
-                viewModel.selectedSidebarTab = .parameters
-            }
-
-            SidebarTabButton(
-                label: "Devices",
-                isSelected: viewModel.selectedSidebarTab == .devices
-            ) {
-                viewModel.selectedSidebarTab = .devices
-            }
-
-            SidebarTabButton(
-                label: "Config",
-                isSelected: viewModel.selectedSidebarTab == .configuration
-            ) {
-                viewModel.selectedSidebarTab = .configuration
-            }
-        }
-        .padding(.vertical, 8)
-        .background(Color(NSColor.windowBackgroundColor))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(.gray.opacity(0.3)),
-            alignment: .bottom
-        )
     }
 
     var noParametersView: some View {
@@ -77,21 +51,6 @@ extension BlockEditorView {
                 .multilineTextAlignment(.center)
         }
         .padding()
-    }
-}
-
-private struct SidebarTabButton: View {
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.caption)
-        }
-        .buttonStyle(.borderless)
-        .foregroundColor(isSelected ? .accentColor : .secondary)
     }
 }
 
