@@ -321,6 +321,12 @@ class BlockEditorViewModel: ObservableObject {
         if let blockId = blockId {
             let configuration: BlockConfiguration = await blockManager.getCurrentConfiguration()
             selectedBlock = configuration.blocks.first { $0.id == blockId }
+
+            // Auto-switch to parameters tab when a block is selected
+            if selectedBlock != nil {
+                showingParameterControls = true
+                showingAudioDevices = false
+            }
         } else {
             selectedBlock = nil
         }

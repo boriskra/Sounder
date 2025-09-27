@@ -4,7 +4,8 @@ import SwiftUI
 /// Supports multiple control types, automation, and precise value entry
 struct ParameterControlsView: View {
     @ObservedObject var blockManager: BlockManagerServiceImpl
-    @State private var selectedBlock: SignalBlock?
+    var selectedBlock: SignalBlock?
+    @State private var localSelectedBlock: SignalBlock?
     @State private var showingAutomation: Bool = false
     @State private var parameterHistory: [String: [Double]] = [:]
 
@@ -13,7 +14,7 @@ struct ParameterControlsView: View {
             // Header
             parameterHeader
 
-            if let block = selectedBlock {
+            if let block = localSelectedBlock ?? selectedBlock {
                 // Parameter controls
                 ScrollView {
                     parameterControlsContent(for: block)
@@ -26,8 +27,8 @@ struct ParameterControlsView: View {
         .frame(minWidth: 280)
         .background(Color(NSColor.controlBackgroundColor))
         .onReceive(blockManager.blockUpdated) { updatedBlock in
-            if updatedBlock.id == selectedBlock?.id {
-                selectedBlock = updatedBlock
+            if updatedBlock.id == (localSelectedBlock ?? selectedBlock)?.id {
+                localSelectedBlock = updatedBlock
             }
         }
     }
@@ -50,7 +51,7 @@ struct ParameterControlsView: View {
                 }
             }
 
-            if let block = selectedBlock {
+            if let block = localSelectedBlock ?? selectedBlock {
                 HStack {
                     Circle()
                         .fill(block.type.category.color)
@@ -261,7 +262,7 @@ struct ParameterControlsView: View {
     }
 
     public func selectBlock(_ block: SignalBlock?) {
-        selectedBlock = block
+        localSelectedBlock = block
     }
 }
 
@@ -311,7 +312,7 @@ struct ParameterControlRow: View {
                 )
         )
         .animation(.easeInOut(duration: 0.3), value: isAnimating)
-        .onChange(of: parameter.value) { newValue in
+        .onChange(of: parameter.value) { _, newValue in
             if !isEditing {
                 currentValue = newValue
                 animateValueChange()
@@ -681,7 +682,10 @@ enum ParameterControlType {
         outputPorts: [OutputPort(name: "signal", displayName: "Signal", signalType: .audio, isRequired: false, defaultValue: nil)]
     )
 
-    ParameterControlsView(blockManager: BlockManagerServiceImpl(audioService: MockAudioBlockService()))
+    ParameterControlsView(
+        blockManager: BlockManagerServiceImpl(audioService: MockAudioBlockService()),
+        selectedBlock: sampleBlock
+    )
         .onAppear {
             // Simulate block selection
         }

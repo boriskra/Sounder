@@ -8,16 +8,10 @@ extension BlockEditorView {
             TabView(selection: $viewModel.selectedSidebarTab) {
                 Group {
                     if viewModel.showingParameterControls {
-                        ParameterControlsView(blockManager: blockManager)
-                            .onReceive(viewModel.canvasViewModel.$selectedBlocks) { selectedBlocks in
-                                guard let firstSelected = selectedBlocks.first else { return }
-                                Task {
-                                    let configuration = await viewModel.blockManager.getCurrentConfiguration()
-                                    if let block = configuration.blocks.first(where: { $0.id == firstSelected }) {
-                                        viewModel.parameterControlsView?.selectBlock(block)
-                                    }
-                                }
-                            }
+                        ParameterControlsView(
+                            blockManager: blockManager,
+                            selectedBlock: viewModel.selectedBlock
+                        )
                     } else {
                         noParametersView
                     }
@@ -138,7 +132,4 @@ extension BlockEditorViewModel {
         }
     }
 
-    var parameterControlsView: ParameterControlsView? {
-        nil
-    }
 }
