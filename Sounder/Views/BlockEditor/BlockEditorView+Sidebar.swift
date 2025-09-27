@@ -16,12 +16,21 @@ extension BlockEditorView {
                         noParametersView
                     }
                 }
+                .tabItem {
+                    Image(systemName: "slider.horizontal.3")
+                }
                 .tag(SidebarTab.parameters)
 
                 AudioDeviceView(blockManager: blockManager)
+                    .tabItem {
+                        Image(systemName: "speaker.wave.2")
+                    }
                     .tag(SidebarTab.devices)
 
                 ConfigurationPanel(viewModel: viewModel)
+                    .tabItem {
+                        Image(systemName: "doc.text")
+                    }
                     .tag(SidebarTab.configuration)
             }
         }
@@ -31,7 +40,6 @@ extension BlockEditorView {
     var sidebarTabs: some View {
         HStack {
             SidebarTabButton(
-                icon: "slider.horizontal.3",
                 label: "Parameters",
                 isSelected: viewModel.selectedSidebarTab == .parameters
             ) {
@@ -39,7 +47,6 @@ extension BlockEditorView {
             }
 
             SidebarTabButton(
-                icon: "speaker.wave.2",
                 label: "Devices",
                 isSelected: viewModel.selectedSidebarTab == .devices
             ) {
@@ -47,7 +54,6 @@ extension BlockEditorView {
             }
 
             SidebarTabButton(
-                icon: "doc.text",
                 label: "Config",
                 isSelected: viewModel.selectedSidebarTab == .configuration
             ) {
@@ -84,18 +90,14 @@ extension BlockEditorView {
 }
 
 private struct SidebarTabButton: View {
-    let icon: String
     let label: String
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                Text(label)
-                    .font(.caption)
-            }
+            Text(label)
+                .font(.caption)
         }
         .buttonStyle(.borderless)
         .foregroundColor(isSelected ? .accentColor : .secondary)
