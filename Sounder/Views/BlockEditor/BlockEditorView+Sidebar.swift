@@ -16,21 +16,12 @@ extension BlockEditorView {
                         noParametersView
                     }
                 }
-                .tabItem {
-                    Text("Parameters")
-                }
                 .tag(SidebarTab.parameters)
 
                 AudioDeviceView(blockManager: blockManager)
-                    .tabItem {
-                        Text("Devices")
-                    }
                     .tag(SidebarTab.devices)
 
                 ConfigurationPanel(viewModel: viewModel)
-                    .tabItem {
-                        Text("Config")
-                    }
                     .tag(SidebarTab.configuration)
             }
         }
