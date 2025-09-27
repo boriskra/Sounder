@@ -65,6 +65,15 @@ public class SpectrumAnalyzerBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        return processAudio(inputs: inputs, frameCount: frameCount)
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         guard let audioInput = inputs["input"], audioInput.count >= frameCount else {
             // Return empty analysis if no input
@@ -113,6 +122,11 @@ public class SpectrumAnalyzerBlock: AudioBlock {
         default:
             break
         }
+    }
+
+    public func reset(to startSample: UInt64, sampleRate: Double) {
+        reset()
+        print("📊 [DEBUG] SpectrumAnalyzerBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
     }
 
     public func reset() {

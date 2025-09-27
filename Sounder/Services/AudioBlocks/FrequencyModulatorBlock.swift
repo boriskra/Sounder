@@ -45,6 +45,15 @@ public class FrequencyModulatorBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        return processAudio(inputs: inputs, frameCount: frameCount)
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         var outputBuffer: [Float] = []
         outputBuffer.reserveCapacity(frameCount)
@@ -90,12 +99,17 @@ public class FrequencyModulatorBlock: AudioBlock {
         }
     }
 
-    public func reset() {
+    public func reset(to startSample: UInt64, sampleRate: Double) {
         carrierPhase = 0.0
         phaseAccumulator = 0.0
         instantaneousFrequency = 1000.0
         lastCarrierFrequency = 1000.0
         resetStatistics()
+        print("📡 [DEBUG] FrequencyModulatorBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    public func reset() {
+        reset(to: 0, sampleRate: 48000.0)
     }
 
     // MARK: - FM Synthesis Implementation

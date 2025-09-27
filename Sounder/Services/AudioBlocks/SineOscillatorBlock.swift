@@ -47,6 +47,47 @@ public class SineOscillatorBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        var outputBuffer: [Float] = []
+        outputBuffer.reserveCapacity(frameCount)
+
+        // Check for frequency modulation input
+        let frequencyModulation = inputs["frequency"]
+        let amplitudeModulation = inputs["amplitude"]
+
+        for frameIndex in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frameIndex)
+            let time = Double(sampleIndex) / sampleRate
+
+            // Apply frequency modulation if present
+            var currentFrequency = _frequency
+            if let freqMod = frequencyModulation, frameIndex < freqMod.count {
+                currentFrequency = _frequency + Double(freqMod[frameIndex]) * 1000.0
+                currentFrequency = max(20.0, min(20000.0, currentFrequency))
+            }
+
+            // Apply amplitude modulation if present
+            var currentAmplitude = _amplitude
+            if let ampMod = amplitudeModulation, frameIndex < ampMod.count {
+                let modDepth = 0.5
+                currentAmplitude = _amplitude * (1.0 + modDepth * Double(ampMod[frameIndex]))
+                currentAmplitude = max(0.0, min(1.0, currentAmplitude))
+            }
+
+            // Calculate phase from absolute timeline position
+            let phase = 2.0 * Double.pi * currentFrequency * time
+            let sample = currentAmplitude * sin(phase)
+            outputBuffer.append(Float(sample))
+        }
+
+        return ["signal": outputBuffer]
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         var outputBuffer: [Float] = []
         outputBuffer.reserveCapacity(frameCount)
@@ -110,13 +151,20 @@ public class SineOscillatorBlock: AudioBlock {
         }
     }
 
-    public func reset() {
+    public func reset(to startSample: UInt64, sampleRate: Double) {
+        // Reset to specific timeline position
         _phase = 0.0
         phaseAccumulator = 0.0
         phaseCorrectionNeeded = false
-        sampleCount = 0
+        sampleCount = startSample
         frequencyUpdateCount = 0
         updatePhaseIncrement()
+        print("🎵 [DEBUG] SineOscillatorBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    public func reset() {
+        // Legacy reset method
+        reset(to: 0, sampleRate: 48000.0)
     }
 
     // MARK: - Mathematical Precision Implementation

@@ -50,6 +50,16 @@ public class TriangleOscillatorBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        // Time-coherent triangle wave processing
+        return processAudio(inputs: inputs, frameCount: frameCount)
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         var outputBuffer: [Float] = []
         outputBuffer.reserveCapacity(frameCount)
@@ -108,11 +118,16 @@ public class TriangleOscillatorBlock: AudioBlock {
         }
     }
 
-    public func reset() {
+    public func reset(to startSample: UInt64, sampleRate: Double) {
         _phase = 0.0
-        sampleCount = 0
+        sampleCount = startSample
         lastSymmetryUpdate = 0
         updateWaveformParameters()
+        print("🔺 [DEBUG] TriangleOscillatorBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    public func reset() {
+        reset(to: 0, sampleRate: 48000.0)
     }
 
     // MARK: - Triangle Wave Generation

@@ -77,6 +77,15 @@ public class WhiteNoiseBlock: AudioBlock {
     ///   - inputs: The currently connected modulation buffers, keyed by port name.
     ///   - frameCount: The number of frames that should be produced.
     /// - Returns: A dictionary containing the generated signal buffer.
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        return processAudio(inputs: inputs, frameCount: frameCount)
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         var outputBuffer: [Float] = []
         outputBuffer.reserveCapacity(frameCount)
@@ -131,6 +140,11 @@ public class WhiteNoiseBlock: AudioBlock {
     }
 
     /// Reseeds the generator and clears accumulated statistics.
+    public func reset(to startSample: UInt64, sampleRate: Double) {
+        reset()
+        print("🔇 [DEBUG] WhiteNoiseBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
     public func reset() {
         // Reseed random number generator
         if let twisterSource = randomSource as? GKMersenneTwisterRandomSource {

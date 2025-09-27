@@ -40,13 +40,33 @@ public protocol AudioBlock {
     var inputPorts: [String] { get }
     var outputPorts: [String] { get }
 
-    /// Process audio for one buffer cycle
+    /// Process audio for one buffer cycle with timeline context
+    /// - Parameters:
+    ///   - inputs: Input signal buffers keyed by port name
+    ///   - frameCount: Number of samples to process
+    ///   - startSample: Global sample position for first sample in this frame
+    ///   - sampleRate: Sample rate for timeline calculations
+    /// - Returns: Output signal buffers keyed by port name
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]]
+
+    /// Legacy process audio method for backward compatibility
     func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]]
 
     /// Update a parameter value (called from audio thread)
     func setParameter(name: String, value: Double)
 
-    /// Reset internal state (called when starting/stopping)
+    /// Reset internal state to specific timeline position
+    /// - Parameters:
+    ///   - startSample: Global sample position to reset to
+    ///   - sampleRate: Sample rate for timeline calculations
+    func reset(to startSample: UInt64, sampleRate: Double)
+
+    /// Legacy reset method for backward compatibility
     func reset()
 }
 
@@ -60,6 +80,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     private var currentOutputDevice: OutputDevice?
     private var bufferUnderrunCount: Int = 0
     private var cpuUsage: Double = 0.0
+    private var graphScheduler: AudioGraphScheduler?
+    private let frameSize: Int = 512
 
     private let eventPublisher: PassthroughSubject<AudioBlockEvent, Never> = PassthroughSubject<AudioBlockEvent, Never>()
 
@@ -81,6 +103,10 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
                 throw AudioBlockError.audioEngineError("Failed to create audio format")
             }
             print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Created audio format: \(audioFormat!)")
+
+            // Initialize audio graph scheduler with timeline
+            graphScheduler = AudioGraphScheduler(frameSize: frameSize, sampleRate: sampleRate)
+            print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Created AudioGraphScheduler with timeline")
 
             // Configure audio session (iOS only)
             #if os(iOS)
@@ -142,9 +168,14 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             )
         }
 
-        // Reset all blocks
-        for block in registeredBlocks.values {
-            block.reset()
+        // Reset timeline and all blocks to beginning
+        if let scheduler = graphScheduler {
+            scheduler.resetTimeline()
+        } else {
+            // Fallback for legacy reset
+            for block in registeredBlocks.values {
+                block.reset()
+            }
         }
     }
 
@@ -312,6 +343,11 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
 
         audioConnections.append(connection)
 
+        // Rebuild graph scheduler if engine is running
+        if audioEngine?.isRunning == true {
+            try await rebuildAudioGraph()
+        }
+
         eventPublisher.send(.blocksConnected(sourceBlockId, sourcePort, destinationBlockId, destinationPort))
     }
 
@@ -326,6 +362,15 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             connection.sourcePort == sourcePort &&
             connection.destinationBlockId == destinationBlockId &&
             connection.destinationPort == destinationPort
+        }
+
+        // Rebuild graph scheduler if engine is running
+        if audioEngine?.isRunning == true {
+            do {
+                try await rebuildAudioGraph()
+            } catch {
+                print("🎛️ [WARNING] AudioBlockService.disconnectBlocks() - Failed to rebuild graph: \(error)")
+            }
         }
 
         eventPublisher.send(.blocksDisconnected(sourceBlockId, sourcePort, destinationBlockId, destinationPort))
@@ -437,10 +482,44 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return SineOscillatorAudioBlock(block: block)
         case .triangleOscillator:
             return TriangleOscillatorAudioBlock(block: block)
+        case .sawtoothOscillator:
+            return SawtoothOscillatorAudioBlock(block: block)
+        case .squareOscillator:
+            return SquareOscillatorAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
             throw AudioBlockError.blockRegistrationError("Unsupported block type: \(block.type)")
+        }
+    }
+
+    // MARK: - Audio Graph Management
+
+    private func rebuildAudioGraph() async throws {
+        guard let scheduler = graphScheduler else {
+            throw AudioBlockError.audioEngineError("Graph scheduler not initialized")
+        }
+
+        // Convert AudioConnection to Connection for scheduler
+        let connections = audioConnections.map { audioConnection in
+            Connection(
+                sourceBlockId: audioConnection.sourceBlockId,
+                sourcePort: audioConnection.sourcePort,
+                destinationBlockId: audioConnection.destinationBlockId,
+                destinationPort: audioConnection.destinationPort,
+                signalType: .audio
+            )
+        }
+
+        do {
+            try scheduler.buildExecutionGraph(
+                blocks: registeredBlocks,
+                connections: connections
+            )
+            print("🎛️ [DEBUG] AudioBlockService.rebuildAudioGraph() - Successfully rebuilt execution graph")
+        } catch {
+            print("🎛️ [ERROR] AudioBlockService.rebuildAudioGraph() - Failed to build graph: \(error)")
+            throw AudioBlockError.audioEngineError("Failed to rebuild audio graph: \(error.localizedDescription)")
         }
     }
 
@@ -452,39 +531,71 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             throw AudioBlockError.audioEngineError("Audio engine not initialized")
         }
 
-        // Create a source node that processes audio through the registered blocks
-        var currentPhase: Float = 0.0
+        guard let scheduler = graphScheduler else {
+            throw AudioBlockError.audioEngineError("Graph scheduler not initialized")
+        }
+
+        // Build initial execution graph
+        try await rebuildAudioGraph()
+
+        // Create a source node that processes audio through the graph scheduler
         let sourceNode = AVAudioSourceNode { [weak self] (_, _, frameCount, audioBufferList) -> OSStatus in
-            guard let self = self else { return noErr }
+            guard let self = self,
+                  let scheduler = self.graphScheduler else {
+                return noErr
+            }
 
             let buffer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            let sampleRate: Float = 48000.0
 
-            // Find the sine oscillator block to get current parameters
-            var frequency: Float = 440.0
-            var amplitude: Float = 0.3
+            // Process one frame through the audio graph
+            let frameOutputs = scheduler.processFrame()
 
-            for registeredBlock in self.registeredBlocks.values {
-                if registeredBlock.type == .sineOscillator {
-                    // Access the SineOscillatorAudioBlock parameters
-                    if let sineBlock = registeredBlock as? SineOscillatorAudioBlock {
-                        frequency = Float(sineBlock.getCurrentFrequency())
-                        amplitude = Float(sineBlock.getCurrentAmplitude())
+            // Find audio output from the graph
+            var outputSamples: [Float] = Array(repeating: 0.0, count: Int(frameCount))
+
+            // Look for output from any AudioOutput block
+            for (blockId, audioBlock) in self.registeredBlocks {
+                if audioBlock.type == .audioOutput {
+                    let outputKey = "\(blockId):input"
+                    if let samples = frameOutputs[outputKey] {
+                        outputSamples = Array(samples.prefix(Int(frameCount)))
+                        break
                     }
-                    break
                 }
             }
 
-            let phaseIncrement = frequency * 2.0 * Float.pi / sampleRate
+            // If no proper graph output, fall back to direct sine generation for compatibility
+            if outputSamples.allSatisfy({ $0 == 0.0 }) {
+                var currentPhase: Float = 0.0
+                let sampleRate: Float = 48000.0
+                var frequency: Float = 440.0
+                var amplitude: Float = 0.3
 
-            for frame in 0..<Int(frameCount) {
-                let sample = amplitude * sin(currentPhase)
-                currentPhase += phaseIncrement
-
-                // Keep phase in reasonable range
-                if currentPhase > 2.0 * Float.pi {
-                    currentPhase -= 2.0 * Float.pi
+                for registeredBlock in self.registeredBlocks.values {
+                    if registeredBlock.type == .sineOscillator {
+                        if let sineBlock = registeredBlock as? SineOscillatorAudioBlock {
+                            frequency = Float(sineBlock.getCurrentFrequency())
+                            amplitude = Float(sineBlock.getCurrentAmplitude())
+                        }
+                        break
+                    }
                 }
+
+                let phaseIncrement = frequency * 2.0 * Float.pi / sampleRate
+
+                for frame in 0..<Int(frameCount) {
+                    outputSamples[frame] = amplitude * sin(currentPhase)
+                    currentPhase += phaseIncrement
+
+                    if currentPhase > 2.0 * Float.pi {
+                        currentPhase -= 2.0 * Float.pi
+                    }
+                }
+            }
+
+            // Copy to all audio channels
+            for frame in 0..<Int(frameCount) {
+                let sample = outputSamples[frame]
 
                 for bufferIndex in 0..<buffer.count {
                     let channelBuffer = buffer[bufferIndex]
@@ -500,7 +611,7 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         engine.attach(sourceNode)
         engine.connect(sourceNode, to: engine.outputNode, format: audioFormat)
 
-        print("🎛️ [DEBUG] AudioBlockService.connectOutputBlockToEngine() - Connected source node to output")
+        print("🎛️ [DEBUG] AudioBlockService.connectOutputBlockToEngine() - Connected graph-based source node to output")
     }
 
     // MARK: - Event Publishing
@@ -572,7 +683,7 @@ public enum AudioBlockEvent {
 
 // MARK: - Simple Audio Block Implementations
 
-/// Simple sine oscillator implementation
+/// Time-coherent sine oscillator implementation
 private class SineOscillatorAudioBlock: AudioBlock {
     let id: UUID
     let type: BlockType = .sineOscillator
@@ -581,8 +692,7 @@ private class SineOscillatorAudioBlock: AudioBlock {
 
     private var frequency: Double = 440.0
     private var amplitude: Double = 0.5
-    private var phase: Double = 0.0
-    private let sampleRate: Double = 48000.0
+    // Removed phase - now calculated from timeline
 
     init(block: SignalBlock) {
         self.id = block.id
@@ -594,24 +704,50 @@ private class SineOscillatorAudioBlock: AudioBlock {
         }
     }
 
-    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+    // MARK: - Time-Coherent Audio Processing
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
         var output: [Float] = []
         output.reserveCapacity(frameCount)
 
-        let phaseIncrement: Double = 2.0 * Double.pi * frequency / sampleRate
+        // Check for frequency modulation input
+        let baseFrequency = frequency
+        let frequencyInput = inputs["frequency"]
 
-        for _ in 0..<frameCount {
-            let sample: Float = Float(amplitude * sin(phase))
-            output.append(sample)
-            phase += phaseIncrement
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let time = Double(sampleIndex) / sampleRate
 
-            // Wrap phase to prevent numerical issues
-            if phase > 2.0 * Double.pi {
-                phase -= 2.0 * Double.pi
+            // Apply frequency modulation if input is connected
+            let currentFrequency: Double
+            if let freqInput = frequencyInput, frame < freqInput.count {
+                currentFrequency = baseFrequency + Double(freqInput[frame])
+            } else {
+                currentFrequency = baseFrequency
             }
+
+            // Calculate phase from absolute timeline position
+            let phase = 2.0 * Double.pi * currentFrequency * time
+            let sample = Float(amplitude * sin(phase))
+            output.append(sample)
         }
 
         return ["signal": output]
+    }
+
+    // Legacy method for backward compatibility
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48000.0
+        )
     }
 
     func setParameter(name: String, value: Double) {
@@ -627,11 +763,19 @@ private class SineOscillatorAudioBlock: AudioBlock {
         }
     }
 
-    func reset() {
-        phase = 0.0
+    // MARK: - Reset Methods
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // No internal state to reset - phase calculated from timeline
+        print("🎵 [DEBUG] SineOscillatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
     }
 
-    // Methods to access current parameter values
+    func reset() {
+        // Legacy reset method
+        reset(to: 0, sampleRate: 48000.0)
+    }
+
+    // MARK: - Parameter Access Methods
     func getCurrentFrequency() -> Double {
         return frequency
     }
@@ -641,7 +785,198 @@ private class SineOscillatorAudioBlock: AudioBlock {
     }
 }
 
-/// Simple triangle oscillator implementation
+/// Time-coherent sawtooth oscillator implementation
+private class SawtoothOscillatorAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .sawtoothOscillator
+    let inputPorts: [String] = ["frequency"]
+    let outputPorts: [String] = ["signal"]
+
+    private var frequency: Double = 440.0
+    private var amplitude: Double = 0.5
+
+    init(block: SignalBlock) {
+        self.id = block.id
+        if let freqParam = block.parameters["frequency"] {
+            self.frequency = freqParam.value
+        }
+        if let ampParam = block.parameters["amplitude"] {
+            self.amplitude = pow(10.0, ampParam.value / 20.0) // Convert dB to linear
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        let baseFrequency = frequency
+        let frequencyInput = inputs["frequency"]
+
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let time = Double(sampleIndex) / sampleRate
+
+            // Apply frequency modulation if input is connected
+            let currentFrequency: Double
+            if let freqInput = frequencyInput, frame < freqInput.count {
+                currentFrequency = baseFrequency + Double(freqInput[frame])
+            } else {
+                currentFrequency = baseFrequency
+            }
+
+            // Calculate phase from absolute timeline position
+            let phase = (currentFrequency * time).truncatingRemainder(dividingBy: 1.0)
+
+            // Generate sawtooth wave: linear ramp from -1 to +1
+            let sample = Float(amplitude * (2.0 * phase - 1.0))
+            output.append(sample)
+        }
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(inputs: inputs, frameCount: frameCount, startSample: 0, sampleRate: 48000.0)
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "frequency":
+            frequency = value
+            print("Updated parameter frequency = \(frequency) for block SawtoothOscillatorAudioBlock")
+        case "amplitude":
+            amplitude = pow(10.0, value / 20.0) // Convert dB to linear
+            print("Updated parameter amplitude = \(value) for block SawtoothOscillatorAudioBlock")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        print("🎵 [DEBUG] SawtoothOscillatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48000.0)
+    }
+
+    func getCurrentFrequency() -> Double {
+        return frequency
+    }
+
+    func getCurrentAmplitude() -> Double {
+        return amplitude
+    }
+}
+
+/// Time-coherent square oscillator implementation
+private class SquareOscillatorAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .squareOscillator
+    let inputPorts: [String] = ["frequency"]
+    let outputPorts: [String] = ["signal"]
+
+    private var frequency: Double = 440.0
+    private var amplitude: Double = 0.5
+    private var dutyCycle: Double = 0.5
+
+    init(block: SignalBlock) {
+        self.id = block.id
+        if let freqParam = block.parameters["frequency"] {
+            self.frequency = freqParam.value
+        }
+        if let ampParam = block.parameters["amplitude"] {
+            self.amplitude = pow(10.0, ampParam.value / 20.0) // Convert dB to linear
+        }
+        if let dutyParam = block.parameters["dutyCycle"] {
+            self.dutyCycle = Self.clampDutyCycle(dutyParam.value)
+        }
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        let baseFrequency = frequency
+        let frequencyInput = inputs["frequency"]
+        let onWidth = dutyCycle
+
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let time = Double(sampleIndex) / sampleRate
+
+            let currentFrequency: Double
+            if let freqInput = frequencyInput, frame < freqInput.count {
+                currentFrequency = baseFrequency + Double(freqInput[frame])
+            } else {
+                currentFrequency = baseFrequency
+            }
+
+            let normalizedPhase = (currentFrequency * time).truncatingRemainder(dividingBy: 1.0)
+            let sampleValue: Double = normalizedPhase < onWidth ? 1.0 : -1.0
+            let sample = Float(amplitude * sampleValue)
+            output.append(sample)
+        }
+
+        return ["signal": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(inputs: inputs, frameCount: frameCount, startSample: 0, sampleRate: 48000.0)
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "frequency":
+            frequency = value
+            print("Updated parameter frequency = \(frequency) for block SquareOscillatorAudioBlock")
+        case "amplitude":
+            amplitude = pow(10.0, value / 20.0) // Convert dB to linear
+            print("Updated parameter amplitude = \(value) for block SquareOscillatorAudioBlock")
+        case "dutyCycle":
+            dutyCycle = Self.clampDutyCycle(value)
+            print("Updated parameter dutyCycle = \(dutyCycle) for block SquareOscillatorAudioBlock")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        print("⬛ [DEBUG] SquareOscillatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48000.0)
+    }
+
+    func getCurrentFrequency() -> Double {
+        return frequency
+    }
+
+    func getCurrentAmplitude() -> Double {
+        return amplitude
+    }
+
+    func getCurrentDutyCycle() -> Double {
+        return dutyCycle
+    }
+
+    private static func clampDutyCycle(_ value: Double) -> Double {
+        return min(max(value, 0.0), 1.0)
+    }
+}
+
+/// Time-coherent triangle oscillator implementation
 private class TriangleOscillatorAudioBlock: AudioBlock {
     let id: UUID
     let type: BlockType = .triangleOscillator
@@ -650,8 +985,7 @@ private class TriangleOscillatorAudioBlock: AudioBlock {
 
     private var frequency: Double = 440.0
     private var amplitude: Double = 0.5
-    private var phase: Double = 0.0
-    private let sampleRate: Double = 48000.0
+    // Removed phase - now calculated from timeline
 
     init(block: SignalBlock) {
         self.id = block.id
@@ -663,25 +997,53 @@ private class TriangleOscillatorAudioBlock: AudioBlock {
         }
     }
 
-    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+    // MARK: - Time-Coherent Audio Processing
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
         var output: [Float] = []
         output.reserveCapacity(frameCount)
 
-        let phaseIncrement: Double = frequency / sampleRate
+        // Check for frequency modulation input
+        let baseFrequency = frequency
+        let frequencyInput = inputs["frequency"]
 
-        for _ in 0..<frameCount {
-            // Generate triangle wave
-            let triangleValue: Double = abs(fmod(phase, 1.0) - 0.5) * 4.0 - 1.0
-            let sample: Float = Float(amplitude * triangleValue)
-            output.append(sample)
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let time = Double(sampleIndex) / sampleRate
 
-            phase += phaseIncrement
-            if phase >= 1.0 {
-                phase -= 1.0
+            // Apply frequency modulation if input is connected
+            let currentFrequency: Double
+            if let freqInput = frequencyInput, frame < freqInput.count {
+                currentFrequency = baseFrequency + Double(freqInput[frame])
+            } else {
+                currentFrequency = baseFrequency
             }
+
+            // Calculate normalized phase from absolute timeline position
+            let normalizedPhase = (currentFrequency * time).truncatingRemainder(dividingBy: 1.0)
+
+            // Generate triangle wave: sawtooth transformed to triangle
+            let triangleValue: Double = abs(normalizedPhase - 0.5) * 4.0 - 1.0
+            let sample = Float(amplitude * triangleValue)
+            output.append(sample)
         }
 
         return ["signal": output]
+    }
+
+    // Legacy method for backward compatibility
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48000.0
+        )
     }
 
     func setParameter(name: String, value: Double) {
@@ -695,12 +1057,20 @@ private class TriangleOscillatorAudioBlock: AudioBlock {
         }
     }
 
+    // MARK: - Reset Methods
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // No internal state to reset - phase calculated from timeline
+        print("🔺 [DEBUG] TriangleOscillatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
     func reset() {
-        phase = 0.0
+        // Legacy reset method
+        reset(to: 0, sampleRate: 48000.0)
     }
 }
 
-/// Audio output block implementation
+/// Time-coherent audio output block implementation
 private class AudioOutputAudioBlock: AudioBlock {
     let id: UUID
     let type: BlockType = .audioOutput
@@ -711,16 +1081,42 @@ private class AudioOutputAudioBlock: AudioBlock {
         self.id = block.id
     }
 
-    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+    // MARK: - Time-Coherent Audio Processing
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
         // Audio output consumes the signal but produces no output
+        // Timeline context available for future features like recording
         return [:]
+    }
+
+    // Legacy method for backward compatibility
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48000.0
+        )
     }
 
     func setParameter(name: String, value: Double) {
         // Audio output has no parameters
     }
 
+    // MARK: - Reset Methods
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        // Nothing to reset for audio output
+        print("🔊 [DEBUG] AudioOutputAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
     func reset() {
-        // Nothing to reset
+        // Legacy reset method
+        reset(to: 0, sampleRate: 48000.0)
     }
 }

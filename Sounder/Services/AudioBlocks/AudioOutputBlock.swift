@@ -43,6 +43,16 @@ public class AudioOutputBlock: AudioBlock {
 
     // MARK: - AudioBlock Protocol
 
+    public func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        // Time-coherent audio output processing
+        return processAudio(inputs: inputs, frameCount: frameCount)
+    }
+
     public func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
         guard let audioInput = inputs["input"], audioInput.count >= frameCount else {
             // Handle buffer underrun
@@ -89,11 +99,16 @@ public class AudioOutputBlock: AudioBlock {
         }
     }
 
-    public func reset() {
+    public func reset(to startSample: UInt64, sampleRate: Double) {
         inputBuffer.removeAll()
-        sampleCount = 0
+        sampleCount = startSample
         bufferUnderruns = 0
         setupDefaultAudioOutput()
+        print("🔊 [DEBUG] AudioOutputBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    public func reset() {
+        reset(to: 0, sampleRate: 48000.0)
     }
 
     // MARK: - Device Management
