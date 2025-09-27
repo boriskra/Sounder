@@ -132,9 +132,14 @@ class BlockEditorViewModel: ObservableObject {
         // Audio service events
         NotificationCenter.default.publisher(for: .audioEngineStatusChanged)
             .sink { [weak self] notification in
+                print("🔔 [DEBUG] BlockEditorViewModel - Received .audioEngineStatusChanged notification")
                 if let status = notification.object as? AudioEngineStatus {
+                    print("🔔 [DEBUG] BlockEditorViewModel - Status: \(status), displayName: \(status.displayName)")
                     self?.audioEngineStatus = status
                     self?.isAudioPlaying = (status == .running)
+                    print("🔔 [DEBUG] BlockEditorViewModel - Updated audioEngineStatus: \(status), isAudioPlaying: \(status == .running)")
+                } else {
+                    print("🔔 [ERROR] BlockEditorViewModel - Invalid status object in notification: \(String(describing: notification.object))")
                 }
             }
             .store(in: &cancellables)
@@ -183,15 +188,18 @@ class BlockEditorViewModel: ObservableObject {
     // MARK: - Audio Control
 
     func playAudio() async {
+        print("🎵 [DEBUG] BlockEditorViewModel.playAudio() - Starting")
         isLoading = true
         statusMessage = "Starting audio processing..."
 
         do {
+            print("🎵 [DEBUG] BlockEditorViewModel.playAudio() - Calling blockManager.startAudioProcessing()")
             // Add timeout to prevent indefinite hanging
             try await withTimeout(seconds: 10) { [self] in
                 try await self.blockManager.startAudioProcessing()
             }
 
+            print("🎵 [DEBUG] BlockEditorViewModel.playAudio() - Audio processing started successfully")
             isAudioPlaying = true
             statusMessage = "Audio playing"
 
@@ -201,12 +209,14 @@ class BlockEditorViewModel: ObservableObject {
             }
 
         } catch {
+            print("🎵 [ERROR] BlockEditorViewModel.playAudio() - Error: \(error)")
             isAudioPlaying = false
             statusMessage = nil
             await handleError(error, context: "starting audio")
         }
 
         isLoading = false
+        print("🎵 [DEBUG] BlockEditorViewModel.playAudio() - Finished, isAudioPlaying: \(isAudioPlaying)")
     }
 
     // Helper function to add timeout to async operations

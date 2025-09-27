@@ -66,18 +66,21 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     // MARK: - Audio Engine Management
 
     public func initializeAudioEngine(sampleRate: Double, bufferSize: UInt32) async throws {
+        print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Starting with sampleRate: \(sampleRate), bufferSize: \(bufferSize)")
         guard sampleRate > 0 && bufferSize > 0 else {
             throw AudioBlockError.audioEngineError("Invalid sample rate or buffer size")
         }
 
         do {
             audioEngine = AVAudioEngine()
+            print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Created AVAudioEngine")
 
             // Configure audio format
             audioFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)
             guard audioFormat != nil else {
                 throw AudioBlockError.audioEngineError("Failed to create audio format")
             }
+            print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Created audio format: \(audioFormat!)")
 
             // Configure audio session (iOS only)
             #if os(iOS)
@@ -85,28 +88,44 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try audioSession.setPreferredSampleRate(sampleRate)
             try audioSession.setPreferredIOBufferDuration(Double(bufferSize) / sampleRate)
+            print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Configured iOS audio session")
             #endif
 
+            print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Initialization completed successfully")
         } catch {
+            print("🎛️ [ERROR] AudioBlockService.initializeAudioEngine() - Error: \(error)")
             throw AudioBlockError.audioEngineError("Failed to initialize audio engine: \(error.localizedDescription)")
         }
     }
 
     public func startEngine() async throws {
+        print("🎛️ [DEBUG] AudioBlockService.startEngine() - Starting")
         guard let engine: AVAudioEngine = audioEngine else {
+            print("🎛️ [ERROR] AudioBlockService.startEngine() - Audio engine not initialized")
             throw AudioBlockError.audioEngineError("Audio engine not initialized")
         }
 
         do {
+            print("🎛️ [DEBUG] AudioBlockService.startEngine() - Engine running status: \(engine.isRunning)")
             if !engine.isRunning {
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - Starting AVAudioEngine")
                 try engine.start()
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - AVAudioEngine started successfully")
+
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - Sending .engineStarted event")
                 eventPublisher.send(.engineStarted)
+
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - Posting .audioEngineStatusChanged notification")
                 NotificationCenter.default.post(
                     name: .audioEngineStatusChanged,
                     object: AudioEngineStatus.running
                 )
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - Completed successfully")
+            } else {
+                print("🎛️ [DEBUG] AudioBlockService.startEngine() - Engine already running")
             }
         } catch {
+            print("🎛️ [ERROR] AudioBlockService.startEngine() - Error: \(error)")
             throw AudioBlockError.audioEngineError("Failed to start audio engine: \(error.localizedDescription)")
         }
     }

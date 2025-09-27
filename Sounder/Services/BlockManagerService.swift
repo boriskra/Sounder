@@ -293,19 +293,31 @@ public class BlockManagerServiceImpl: BlockManagerService, ObservableObject {
     // MARK: - Audio Engine Integration
 
     public func startAudioProcessing() async throws {
-        guard !isProcessing else { return }
+        print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Starting")
+        print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - isProcessing: \(isProcessing)")
+        guard !isProcessing else {
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Already processing, returning")
+            return
+        }
+
+        print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Current configuration has \(currentConfiguration.blocks.count) blocks, \(currentConfiguration.connections.count) connections")
 
         do {
             // Initialize audio engine
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Initializing audio engine")
             try await audioService.initializeAudioEngine(sampleRate: 48000, bufferSize: 512)
 
             // Register all blocks
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Registering \(currentConfiguration.blocks.count) blocks")
             for block in currentConfiguration.blocks {
+                print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Registering block: \(block.title) (\(block.type))")
                 try await audioService.registerBlock(block)
             }
 
             // Create all connections
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Creating \(currentConfiguration.connections.count) connections")
             for connection in currentConfiguration.connections {
+                print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Creating connection: \(connection.sourcePort) -> \(connection.destinationPort)")
                 try await audioService.connectBlocks(
                     from: connection.sourceBlockId, sourcePort: connection.sourcePort,
                     to: connection.destinationBlockId, destinationPort: connection.destinationPort
@@ -313,11 +325,14 @@ public class BlockManagerServiceImpl: BlockManagerService, ObservableObject {
             }
 
             // Start engine
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Starting audio engine")
             try await audioService.startEngine()
 
             isProcessing = true
+            print("🔧 [DEBUG] BlockManagerService.startAudioProcessing() - Audio processing started successfully, sending event")
             eventPublisher.send(.audioProcessingStarted)
         } catch {
+            print("🔧 [ERROR] BlockManagerService.startAudioProcessing() - Error: \(error)")
             throw BlockManagerError.audioEngineError("Failed to start audio processing: \(error.localizedDescription)")
         }
     }
