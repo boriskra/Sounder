@@ -183,11 +183,15 @@ class BlockEditorViewModel: ObservableObject {
     // MARK: - Audio Control
 
     func playAudio() async {
-        do {
-            isLoading = true
-            statusMessage = "Starting audio processing..."
+        isLoading = true
+        statusMessage = "Starting audio processing..."
 
-            try await blockManager.startAudioProcessing()
+        do {
+            // Add timeout to prevent indefinite hanging
+            try await withTimeout(seconds: 10) { [self] in
+                try await self.blockManager.startAudioProcessing()
+            }
+
             isAudioPlaying = true
             statusMessage = "Audio playing"
 
@@ -197,10 +201,33 @@ class BlockEditorViewModel: ObservableObject {
             }
 
         } catch {
+            isAudioPlaying = false
+            statusMessage = nil
             await handleError(error, context: "starting audio")
         }
 
         isLoading = false
+    }
+
+    // Helper function to add timeout to async operations
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw AudioTimeoutError()
+            }
+
+            guard let result = try await group.next() else {
+                throw AudioTimeoutError()
+            }
+
+            group.cancelAll()
+            return result
+        }
     }
 
     func stopAudio() async {
@@ -580,6 +607,14 @@ enum KeyCommand: String, CaseIterable {
         case .playPause, .deleteSelected:
             return []
         }
+    }
+}
+
+// MARK: - Error Types
+
+struct AudioTimeoutError: Error, LocalizedError {
+    var errorDescription: String? {
+        return "Audio processing operation timed out"
     }
 }
 
