@@ -155,7 +155,9 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     // MARK: - Block Audio Processing
 
     public func registerBlock(_ block: SignalBlock) async throws {
+        print("🎛️ [DEBUG] AudioBlockService.registerBlock() - Registering block: \(block.title) (\(block.type))")
         guard registeredBlocks[block.id] == nil else {
+            print("🎛️ [DEBUG] AudioBlockService.registerBlock() - Block already registered: \(block.id)")
             return // Already registered
         }
 
@@ -163,6 +165,12 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         let audioBlock: AudioBlock = try createAudioBlock(for: block)
         registeredBlocks[block.id] = audioBlock
 
+        // Connect to audio engine if this is an output block
+        if block.type == .audioOutput {
+            try await connectOutputBlockToEngine(audioBlock)
+        }
+
+        print("🎛️ [DEBUG] AudioBlockService.registerBlock() - Successfully registered block: \(block.title)")
         eventPublisher.send(.blockRegistered(block.id))
     }
 
@@ -434,6 +442,44 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         default:
             throw AudioBlockError.blockRegistrationError("Unsupported block type: \(block.type)")
         }
+    }
+
+    // MARK: - Engine Node Connection
+
+    private func connectOutputBlockToEngine(_ audioBlock: AudioBlock) async throws {
+        print("🎛️ [DEBUG] AudioBlockService.connectOutputBlockToEngine() - Connecting output block to engine")
+        guard let engine = audioEngine else {
+            throw AudioBlockError.audioEngineError("Audio engine not initialized")
+        }
+
+        // Create a simple source node that can generate audio
+        let sourceNode = AVAudioSourceNode { (_, _, frameCount, audioBufferList) -> OSStatus in
+            // Generate sine wave for testing
+            let frequency: Float = 440.0 // A4 note
+            let amplitude: Float = 0.3
+            let sampleRate: Float = 48000.0
+
+            let buffer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+
+            for frame in 0..<Int(frameCount) {
+                let phase = Float(frame) * frequency * 2.0 * Float.pi / sampleRate
+                let sample = amplitude * sin(phase)
+
+                for bufferIndex in 0..<buffer.count {
+                    let channelBuffer = buffer[bufferIndex]
+                    let channelData = channelBuffer.mData?.assumingMemoryBound(to: Float.self)
+                    channelData?[frame] = sample
+                }
+            }
+
+            return noErr
+        }
+
+        // Connect the source node to the output
+        engine.attach(sourceNode)
+        engine.connect(sourceNode, to: engine.outputNode, format: audioFormat)
+
+        print("🎛️ [DEBUG] AudioBlockService.connectOutputBlockToEngine() - Connected source node to output")
     }
 
     // MARK: - Event Publishing
