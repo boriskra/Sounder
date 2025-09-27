@@ -498,6 +498,12 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return FrequencyModulatorAudioBlock(block: block)
         case .amplitudeModulator:
             return AmplitudeModulatorAudioBlock(block: block)
+        case .ringModulator:
+            return RingModulatorAudioBlock(block: block)
+        case .lowPassFilter:
+            return LowPassFilterAudioBlock(block: block)
+        case .highPassFilter:
+            return HighPassFilterAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
         default:
@@ -1748,6 +1754,254 @@ private class TriangleOscillatorAudioBlock: AudioBlock {
     }
 }
 
+/// Timeline-coherent low-pass filter using shared biquad core
+private class LowPassFilterAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .lowPassFilter
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["output"]
+
+    private var cutoffFrequency: Double
+    private var resonance: Double
+    private var lastSampleRate: Double
+    private let filterCore: BiquadFilterCore
+
+    init(block: SignalBlock) {
+        id = block.id
+        let cutoffParam = block.parameters["cutoffFrequency"]?.value ?? 1_000.0
+        let resonanceParam = block.parameters["resonance"]?.value ?? 0.707
+        lastSampleRate = 48_000.0
+        cutoffFrequency = Self.sanitizeCutoff(cutoffParam)
+        resonance = Self.clampResonance(resonanceParam)
+        filterCore = BiquadFilterCore.createLowpass(frequency: cutoffFrequency, q: resonance)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let localSampleRate: Double
+        if sampleRate.isFinite, sampleRate > 0 {
+            lastSampleRate = sampleRate
+            localSampleRate = sampleRate
+        } else {
+            localSampleRate = lastSampleRate
+        }
+
+        let effectiveCutoff = Self.effectiveCutoff(for: cutoffFrequency, sampleRate: localSampleRate)
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+        let effectiveResonance = Self.clampResonance(resonance)
+
+        let inputSignal = inputs["input"] ?? []
+        var doubleBuffer = [Double](repeating: 0.0, count: frameCount)
+
+        if !inputSignal.isEmpty {
+            let copyCount = min(frameCount, inputSignal.count)
+            for index in 0..<copyCount {
+                doubleBuffer[index] = Double(inputSignal[index])
+            }
+        }
+
+        let filtered = filterCore.processAudio(
+            samples: doubleBuffer,
+            startSample: startSample,
+            sampleRate: localSampleRate,
+            filterType: .lowpass,
+            frequency: effectiveCutoff,
+            q: effectiveResonance,
+            gain: 0.0
+        )
+
+        let output = filtered.map { sample -> Float in
+            if sample > 1.0 { return 1.0 }
+            if sample < -1.0 { return -1.0 }
+            return Float(sample)
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "cutoffFrequency":
+            cutoffFrequency = Self.sanitizeCutoff(value)
+            print("🪄 [DEBUG] LowPassFilterAudioBlock.setParameter(cutoffFrequency) = \(cutoffFrequency)Hz")
+        case "resonance":
+            resonance = Self.clampResonance(value)
+            print("🪄 [DEBUG] LowPassFilterAudioBlock.setParameter(resonance) = \(resonance)")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        filterCore.reset(to: startSample)
+        lastSampleRate = sampleRate
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+        print("🪄 [DEBUG] LowPassFilterAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
+    }
+
+    func reset() {
+        filterCore.reset()
+        lastSampleRate = 48_000.0
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+    }
+
+    private static func sanitizeCutoff(_ value: Double) -> Double {
+        guard value.isFinite else { return 1_000.0 }
+        return min(max(value, 10.0), 40_000.0)
+    }
+
+    private static func effectiveCutoff(for value: Double, sampleRate: Double) -> Double {
+        let sanitized = sanitizeCutoff(value)
+        guard sampleRate.isFinite, sampleRate > 0 else { return sanitized }
+        let maxAllowed = max(sampleRate * 0.49, 10.0)
+        return min(sanitized, maxAllowed)
+    }
+
+    private static func clampResonance(_ value: Double) -> Double {
+        guard value.isFinite else { return 0.707 }
+        return min(max(value, 0.1), 12.0)
+    }
+}
+
+/// Timeline-coherent high-pass filter using shared biquad core
+private class HighPassFilterAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .highPassFilter
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["output"]
+
+    private var cutoffFrequency: Double
+    private var resonance: Double
+    private var lastSampleRate: Double
+    private let filterCore: BiquadFilterCore
+
+    init(block: SignalBlock) {
+        id = block.id
+        let cutoffParam = block.parameters["cutoffFrequency"]?.value ?? 1_000.0
+        let resonanceParam = block.parameters["resonance"]?.value ?? 0.707
+        lastSampleRate = 48_000.0
+        cutoffFrequency = Self.sanitizeCutoff(cutoffParam)
+        resonance = Self.clampResonance(resonanceParam)
+        filterCore = BiquadFilterCore.createHighpass(frequency: cutoffFrequency, q: resonance)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let localSampleRate: Double
+        if sampleRate.isFinite, sampleRate > 0 {
+            lastSampleRate = sampleRate
+            localSampleRate = sampleRate
+        } else {
+            localSampleRate = lastSampleRate
+        }
+
+        let effectiveCutoff = Self.effectiveCutoff(for: cutoffFrequency, sampleRate: localSampleRate)
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+        let effectiveResonance = Self.clampResonance(resonance)
+
+        let inputSignal = inputs["input"] ?? []
+        var doubleBuffer = [Double](repeating: 0.0, count: frameCount)
+
+        if !inputSignal.isEmpty {
+            let copyCount = min(frameCount, inputSignal.count)
+            for index in 0..<copyCount {
+                doubleBuffer[index] = Double(inputSignal[index])
+            }
+        }
+
+        let filtered = filterCore.processAudio(
+            samples: doubleBuffer,
+            startSample: startSample,
+            sampleRate: localSampleRate,
+            filterType: .highpass,
+            frequency: effectiveCutoff,
+            q: effectiveResonance,
+            gain: 0.0
+        )
+
+        let output = filtered.map { sample -> Float in
+            if sample > 1.0 { return 1.0 }
+            if sample < -1.0 { return -1.0 }
+            return Float(sample)
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "cutoffFrequency":
+            cutoffFrequency = Self.sanitizeCutoff(value)
+            print("🔊 [DEBUG] HighPassFilterAudioBlock.setParameter(cutoffFrequency) = \(cutoffFrequency)Hz")
+        case "resonance":
+            resonance = Self.clampResonance(value)
+            print("🔊 [DEBUG] HighPassFilterAudioBlock.setParameter(resonance) = \(resonance)")
+        default:
+            break
+        }
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        filterCore.reset(to: startSample)
+        lastSampleRate = sampleRate
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+        print("🔊 [DEBUG] HighPassFilterAudioBlock.reset(to:) - sample \(startSample) @ \(sampleRate)Hz")
+    }
+
+    func reset() {
+        filterCore.reset()
+        lastSampleRate = 48_000.0
+        cutoffFrequency = Self.sanitizeCutoff(cutoffFrequency)
+    }
+
+    private static func sanitizeCutoff(_ value: Double) -> Double {
+        guard value.isFinite else { return 1_000.0 }
+        return min(max(value, 10.0), 40_000.0)
+    }
+
+    private static func effectiveCutoff(for value: Double, sampleRate: Double) -> Double {
+        let sanitized = sanitizeCutoff(value)
+        guard sampleRate.isFinite, sampleRate > 0 else { return sanitized }
+        let maxAllowed = max(sampleRate * 0.49, 10.0)
+        return min(sanitized, maxAllowed)
+    }
+
+    private static func clampResonance(_ value: Double) -> Double {
+        guard value.isFinite else { return 0.707 }
+        return min(max(value, 0.1), 12.0)
+    }
+}
+
 /// Time-coherent audio output block implementation
 private class AudioOutputAudioBlock: AudioBlock {
     let id: UUID
@@ -1942,6 +2196,77 @@ private class FrequencyModulatorAudioBlock: AudioBlock {
     }
 
     private static let twoPi = 2.0 * Double.pi
+}
+
+/// Timeline-coherent ring modulator implementation
+private class RingModulatorAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .ringModulator
+    let inputPorts: [String] = ["signal1", "signal2"]
+    let outputPorts: [String] = ["output"]
+
+    init(block: SignalBlock) {
+        id = block.id
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else { return ["output": []] }
+
+        let signal1 = inputs["signal1"] ?? []
+        let signal2 = inputs["signal2"] ?? []
+
+        var output: [Float] = []
+        output.reserveCapacity(frameCount)
+
+        for frame in 0..<frameCount {
+            let sampleIndex = startSample + UInt64(frame)
+            let time = Double(sampleIndex) / sampleRate
+            if !time.isFinite {
+                output.append(0.0)
+                continue
+            }
+
+            let sample1 = frame < signal1.count ? Double(signal1[frame]) : 0.0
+            let sample2 = frame < signal2.count ? Double(signal2[frame]) : 0.0
+            let product = sample1 * sample2
+            output.append(Float(Self.clampToAudioRange(product)))
+        }
+
+        return ["output": output]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: 48_000.0
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        print("🔔 [DEBUG] RingModulatorAudioBlock.setParameter(\(name)) = \(value) ignored")
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        print("🔔 [DEBUG] RingModulatorAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: 48_000.0)
+    }
+
+    @inline(__always)
+    private static func clampToAudioRange(_ value: Double) -> Double {
+        if value > 1.0 { return 1.0 }
+        if value < -1.0 { return -1.0 }
+        return value
+    }
 }
 
 /// Timeline-coherent amplitude modulator implementation
