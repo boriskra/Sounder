@@ -446,9 +446,76 @@ struct InputPortView: View {
     }
 
     private func handleConnectionDrop(providers: [NSItemProvider]) -> Bool {
-        // The connection session ID and targets need to be tracked separately
-        // For now, return false since we can't complete the connection without the proper data
-        return false
+        guard let provider = providers.first else { return false }
+
+        var result = false
+        let semaphore = DispatchSemaphore(value: 0)
+
+        provider.loadObject(ofClass: NSString.self) { object, error in
+            defer { semaphore.signal() }
+
+            guard let dragDataString = object as? NSString else { return }
+
+            // Parse drag data: "blockId|portName|sessionId"
+            let components = (dragDataString as String).components(separatedBy: "|")
+            guard components.count >= 2,
+                  let sourceBlockId = UUID(uuidString: components[0]) else {
+                return
+            }
+
+            let sourcePortName = components[1]
+            let sessionId = components.count > 2 ? UUID(uuidString: components[2]) : nil
+
+            // Create connection using canvas service
+            Task { @MainActor in
+                do {
+                    if let sessionId = sessionId {
+                        // Complete the connection drawing session
+                        let _ = try await canvasService.completeConnectionDraw(
+                            connectionSessionId: sessionId,
+                            to: blockId,
+                            port: portName
+                        )
+                        result = true
+                    } else {
+                        // Fallback: create connection directly via block manager
+                        let isValid = await blockManager.validateConnection(
+                            from: sourceBlockId, sourcePort: sourcePortName,
+                            to: blockId, destinationPort: portName
+                        )
+
+                        if isValid {
+                            let _ = try await blockManager.createConnection(
+                                from: sourceBlockId, sourcePort: sourcePortName,
+                                to: blockId, destinationPort: portName
+                            )
+                            result = true
+                        }
+                    }
+                } catch {
+                    // Fallback: create connection directly via block manager
+                    do {
+                        let isValid = await blockManager.validateConnection(
+                            from: sourceBlockId, sourcePort: sourcePortName,
+                            to: blockId, destinationPort: portName
+                        )
+
+                        if isValid {
+                            let _ = try await blockManager.createConnection(
+                                from: sourceBlockId, sourcePort: sourcePortName,
+                                to: blockId, destinationPort: portName
+                            )
+                            result = true
+                        }
+                    } catch {
+                        print("Failed to create connection: \(error)")
+                    }
+                }
+            }
+        }
+
+        semaphore.wait()
+        return result
     }
 }
 
@@ -460,6 +527,7 @@ struct OutputPortView: View {
     @ObservedObject var blockManager: BlockManagerServiceImpl
 
     @State private var isHovered = false
+    @State private var currentConnectionSessionId: UUID?
 
     private let portSize: CGFloat = 12
 
@@ -489,13 +557,16 @@ struct OutputPortView: View {
         }
         .onDrag {
             Task {
-                await canvasService.beginConnectionDraw(
+                currentConnectionSessionId = await canvasService.beginConnectionDraw(
                     from: blockId,
                     port: portName,
                     at: CGPoint(x: 0, y: 0) // Initial position - will be updated
                 )
             }
-            return NSItemProvider(object: blockId.uuidString as NSString)
+            // Include block ID, port name, and session ID in drag data
+            let sessionId = currentConnectionSessionId?.uuidString ?? ""
+            let dragData = "\(blockId.uuidString)|\(portName)|\(sessionId)"
+            return NSItemProvider(object: dragData as NSString)
         }
         .help("Output: \(portName)")
     }
