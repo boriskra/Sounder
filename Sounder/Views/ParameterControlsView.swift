@@ -5,7 +5,7 @@ import SwiftUI
 struct ParameterControlsView: View {
     @ObservedObject var blockManager: BlockManagerServiceImpl
     @State private var selectedBlock: SignalBlock?
-    @State private var showingAutomation = false
+    @State private var showingAutomation: Bool = false
     @State private var parameterHistory: [String: [Double]] = [:]
 
     var body: some View {
@@ -275,9 +275,9 @@ struct ParameterControlRow: View {
     let history: [Double]
 
     @State private var currentValue: Double
-    @State private var isEditing = false
-    @State private var textValue = ""
-    @State private var isAnimating = false
+    @State private var isEditing: Bool = false
+    @State private var textValue: String = ""
+    @State private var isAnimating: Bool = false
 
     init(parameter: BlockParameter, blockId: UUID, blockManager: BlockManagerServiceImpl, showingAutomation: Bool, history: [Double]) {
         self.parameter = parameter
@@ -475,11 +475,11 @@ struct ParameterControlRow: View {
         Canvas { context, size in
             guard !history.isEmpty else { return }
 
-            let path = Path { path in
+            let path: Path = Path { path in
                 for (index, value) in history.enumerated() {
-                    let xPosition = CGFloat(index) / CGFloat(history.count - 1) * size.width
-                    let normalizedValue = (value - parameter.minimumValue) / (parameter.maximumValue - parameter.minimumValue)
-                    let yPosition = size.height - CGFloat(normalizedValue) * size.height
+                    let xPosition: CGFloat = CGFloat(index) / CGFloat(history.count - 1) * size.width
+                    let normalizedValue: Double = (value - parameter.minimumValue) / (parameter.maximumValue - parameter.minimumValue)
+                    let yPosition: CGFloat = size.height - CGFloat(normalizedValue) * size.height
 
                     if index == 0 {
                         path.move(to: CGPoint(x: xPosition, y: yPosition))
@@ -520,11 +520,11 @@ struct ParameterControlRow: View {
     // MARK: - Helper Methods
 
     private func formatValue(_ value: Double) -> String {
-        let formatter = NumberFormatter()
+        let formatter: NumberFormatter = NumberFormatter()
         formatter.maximumFractionDigits = 2
         formatter.minimumFractionDigits = 0
 
-        let formattedValue = formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        let formattedValue: String = formatter.string(from: NSNumber(value: value)) ?? "\(value)"
 
         if !parameter.unit.isEmpty {
             return "\(formattedValue) \(parameter.unit)"
@@ -568,7 +568,7 @@ struct KnobControl: View {
     let color: Color
     let onEditingChanged: (Bool) -> Void
 
-    @State private var isDragging = false
+    @State private var isDragging: Bool = false
     @State private var lastDragValue: CGFloat = 0
 
     private let knobSize: CGFloat = 60
@@ -613,11 +613,11 @@ struct KnobControl: View {
                         onEditingChanged(true)
                     }
 
-                    let delta = gesture.translation.height - lastDragValue
+                    let delta: CGFloat = gesture.translation.height - lastDragValue
                     let sensitivity: CGFloat = 2.0
-                    let change = -delta / sensitivity
+                    let change: CGFloat = -delta / sensitivity
 
-                    let newValue = value + Double(change) * step
+                    let newValue: Double = value + Double(change) * step
                     value = min(max(newValue, range.lowerBound), range.upperBound)
 
                     lastDragValue = gesture.translation.height
@@ -635,7 +635,7 @@ struct KnobControl: View {
     }
 
     private var indicatorAngle: Double {
-        let range = 270.0 // Total rotation range in degrees
+        let range: Double = 270.0 // Total rotation range in degrees
         return Double(normalizedValue) * range - 135.0 // Start at -135 degrees
     }
 }
@@ -660,7 +660,7 @@ enum ParameterControlType {
 }
 
 #Preview {
-    let sampleBlock = SignalBlock(
+    let sampleBlock: SignalBlock = SignalBlock(
         type: .sineOscillator,
         title: "Sine Wave",
         position: CGPoint(x: 100, y: 100),
