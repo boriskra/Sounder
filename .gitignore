@@ -5,3 +5,18 @@ swiftlint-output.txt
 
 # macOS metadata
 .DS_Store
+
+# Local scratch
+tmp/
+
+# Build outputs
+build/
+# Specification drafts
+specs/
+
+# AI assistant configuration
+.claude/
+.gemini/
+.specify/
+
+Sounder.xcodeproj/project.xcworkspace/xcuserdata/
