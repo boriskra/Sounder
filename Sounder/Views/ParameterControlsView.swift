@@ -144,15 +144,15 @@ struct ParameterControlsView: View {
             case .pinkNoise:
                 whiteNoiseControls(for: block) // Use same controls as white noise
             case .linearChirp, .hyperbolicChirp:
-                Text("Chirp controls not implemented")
+                chirpControls(for: block)
             case .amplitudeModulator, .ringModulator:
-                Text("Modulator controls not implemented")
+                modulatorControls(for: block)
             case .lowPassFilter, .highPassFilter, .bandPassFilter:
-                Text("Filter controls not implemented")
+                filterControls(for: block)
             case .mixer, .amplifier:
                 Text("Processing controls not implemented")
             case .levelMeter, .frequencyCounter:
-                Text("Meter controls not implemented")
+                meterControls(for: block)
             }
         }
     }
@@ -358,6 +358,221 @@ struct ParameterControlsView: View {
                 try await blockManager.setOutputDevice(device)
             } catch {
                 print("Failed to set output device: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Chirp Controls
+
+    private func chirpControls(for block: SignalBlock) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(["startFrequency", "endFrequency", "duration"], id: \.self) { paramName in
+                if let param = block.parameters[paramName] {
+                    ParameterControlRow(
+                        parameter: param,
+                        blockId: block.id,
+                        blockManager: blockManager,
+                        showingAutomation: showingAutomation,
+                        history: generateMockHistory()
+                    )
+                }
+            }
+
+            // Add sweep type picker
+            VStack(alignment: .leading) {
+                Text("Sweep Type").font(.caption).foregroundColor(.secondary)
+                Picker("Sweep", selection: .constant("linear")) {
+                    Text("Linear").tag("linear")
+                    Text("Logarithmic").tag("log")
+                    Text("Exponential").tag("exp")
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+
+    // MARK: - Modulator Controls
+
+    private func modulatorControls(for block: SignalBlock) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(["modulationDepth", "modulationRate", "carrierFrequency"], id: \.self) { paramName in
+                if let param = block.parameters[paramName] {
+                    ParameterControlRow(
+                        parameter: param,
+                        blockId: block.id,
+                        blockManager: blockManager,
+                        showingAutomation: showingAutomation,
+                        history: generateMockHistory()
+                    )
+                }
+            }
+
+            // Add waveform selector for modulator
+            VStack(alignment: .leading) {
+                Text("Modulation Waveform").font(.caption).foregroundColor(.secondary)
+                Picker("Waveform", selection: .constant("sine")) {
+                    Text("Sine").tag("sine")
+                    Text("Triangle").tag("triangle")
+                    Text("Square").tag("square")
+                    Text("Sawtooth").tag("sawtooth")
+                }
+                .pickerStyle(.menu)
+            }
+        }
+    }
+
+    // MARK: - Filter Controls
+
+    private func filterControls(for block: SignalBlock) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(["cutoffFrequency", "resonance", "gain"], id: \.self) { paramName in
+                if let param = block.parameters[paramName] {
+                    ParameterControlRow(
+                        parameter: param,
+                        blockId: block.id,
+                        blockManager: blockManager,
+                        showingAutomation: showingAutomation,
+                        history: generateMockHistory()
+                    )
+                }
+            }
+
+            // Add filter type selector
+            if block.type == .bandPassFilter {
+                ForEach(["bandwidth", "centerFrequency"], id: \.self) { paramName in
+                    if let param = block.parameters[paramName] {
+                        ParameterControlRow(
+                            parameter: param,
+                            blockId: block.id,
+                            blockManager: blockManager,
+                            showingAutomation: showingAutomation,
+                            history: generateMockHistory()
+                        )
+                    }
+                }
+            }
+
+            // Frequency response visualization
+            FilterResponseView()
+                .frame(height: 100)
+                .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Meter Controls
+
+    private func meterControls(for block: SignalBlock) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(["integrationTime", "scale", "range"], id: \.self) { paramName in
+                if let param = block.parameters[paramName] {
+                    ParameterControlRow(
+                        parameter: param,
+                        blockId: block.id,
+                        blockManager: blockManager,
+                        showingAutomation: showingAutomation,
+                        history: generateMockHistory()
+                    )
+                }
+            }
+
+            // Display type selector
+            VStack(alignment: .leading) {
+                Text("Display Mode").font(.caption).foregroundColor(.secondary)
+                Picker("Mode", selection: .constant("peak")) {
+                    Text("Peak").tag("peak")
+                    Text("RMS").tag("rms")
+                    Text("Peak + RMS").tag("both")
+                    Text("Average").tag("average")
+                }
+                .pickerStyle(.menu)
+            }
+
+            // Real-time meter display
+            MeterDisplayView()
+                .frame(height: 60)
+                .padding(.top, 8)
+        }
+    }
+}
+
+// MARK: - Support Views
+
+struct FilterResponseView: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                let width = geometry.size.width
+                let height = geometry.size.height
+
+                // Draw frequency response curve
+                path.move(to: CGPoint(x: 0, y: height * 0.8))
+                path.addCurve(
+                    to: CGPoint(x: width, y: height * 0.2),
+                    control1: CGPoint(x: width * 0.3, y: height * 0.1),
+                    control2: CGPoint(x: width * 0.7, y: height * 0.1)
+                )
+            }
+            .stroke(Color.accentColor, lineWidth: 2)
+            .background(
+                LinearGradient(
+                    colors: [Color.accentColor.opacity(0.2), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        }
+        .overlay(
+            VStack {
+                HStack {
+                    Text("20Hz").font(.caption2).foregroundColor(.secondary)
+                    Spacer()
+                    Text("20kHz").font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding(4)
+        )
+    }
+}
+
+struct MeterDisplayView: View {
+    @State private var currentLevel: Double = -20
+    @State private var peakLevel: Double = -12
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.2))
+
+                // Level bar
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(
+                        LinearGradient(
+                            colors: [.green, .yellow, .orange, .red],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geometry.size.width * CGFloat((currentLevel + 60) / 66))
+
+                // Peak indicator
+                Rectangle()
+                    .fill(Color.red)
+                    .frame(width: 2)
+                    .offset(x: geometry.size.width * CGFloat((peakLevel + 60) / 66))
+            }
+        }
+        .onAppear {
+            // Simulate level changes
+            Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    currentLevel = Double.random(in: -40...0)
+                    if currentLevel > peakLevel {
+                        peakLevel = currentLevel
+                    }
+                }
             }
         }
     }

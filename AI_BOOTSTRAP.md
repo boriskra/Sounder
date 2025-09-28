@@ -406,7 +406,7 @@ Follow the established pattern:
 - Implement proper error handling and loading states
 - Maintain accessibility support
 
-## Current Implementation Status (December 2024)
+## Current Implementation Status (January 2025)
 
 ### AudioBlock Implementation Progress: 85% Complete (17/20)
 
@@ -425,26 +425,60 @@ Follow the established pattern:
 
 ### Known Critical Issues
 
-**🚨 PRIORITY 1 - BLOCKERS:**
-1. **Mock services used in production views** - Views use `MockAudioBlockService()` instead of real audio processing
-   - Files: BlockView.swift, BlockCanvasView.swift, AudioDeviceView.swift, BlockLibraryView.swift, ParameterControlsView.swift
-   - **Impact**: Users get fake functionality instead of real audio processing
+**✅ FIXED (January 2025):**
+1. **Mock services in production views** - All #Preview blocks now use `AudioBlockServiceImpl()` instead of mock services
+   - Files fixed: BlockView.swift, BlockCanvasView.swift, AudioDeviceView.swift, BlockLibraryView.swift, ParameterControlsView.swift
+   - **Resolution**: Mock services are now only used in test targets
 
-**🔧 PRIORITY 2 - MISSING FUNCTIONALITY:**
-2. **Missing switch cases** for 3 analysis blocks in `AudioBlockService.createAudioBlock()`
-3. **Stub implementations**:
-   - XML import in ConfigurationPersistenceService.swift
-   - Template creation in BlockLibraryView.swift
-   - Parameter frequency extraction in AVFAudioService.swift
+**🚨 PRIORITY 1 - CRITICAL BLOCKERS:**
+1. **Missing AudioBlock factory cases** - 3 analysis blocks crash app when created:
+   - `AudioBlockService.swift:479` missing cases for: spectrumAnalyzer, levelMeter, frequencyCounter
+   - **Impact**: App crashes when users try to create analysis blocks
+
+2. **Placeholder analysis methods** - All analysis functions return fake data:
+   - `getSpectrumData()` at line 433-442: Returns random data instead of FFT
+   - `getLevelMeterData()` at line 444-450: Returns random levels instead of RMS/peak
+   - `getFrequencyAnalysis()` at line 452-456: Returns fixed 440Hz instead of pitch detection
+   - `getAudioLatency()` at line 471-475: Returns fake 100ms instead of real latency
+   - **Impact**: All analysis blocks display meaningless data
+
+**🔧 PRIORITY 2 - HIGH PRIORITY MISSING FEATURES:**
+1. **Stub device switching** - Cannot change audio output devices:
+   - `AVFAudioService.swift:164-171` - `setEngineOutputDevice()` is empty stub
+   - **Impact**: Users stuck with default audio device
+
+2. **Broken XML import**:
+   - `ConfigurationPersistenceService.swift:832` - "not yet implemented"
+   - **Impact**: Cannot import XML configurations despite export working
+
+3. **Incomplete parameter controls**:
+   - Most block types show "controls not implemented" message
+   - `ParameterControlsView.swift` lines 147, 149, 151, 155 - filter/modulator/chirp/meter controls missing
+   - **Impact**: Cannot edit parameters for most block types
+
+4. **Non-functional template system**:
+   - `BlockLibraryView.swift:394-395` - Template creation commented out
+   - `BlockLibraryView.swift:435` - `applyTemplate()` method incomplete
+   - **Impact**: Template feature advertised but non-functional
 
 ### Service Architecture Notes
 
 **Real vs Mock Services:**
-- **Production**: Use `AVFAudioService()` for real audio processing
-- **Testing**: Use `MockAudioService()` for unit tests only
+- **Production**: Use `AudioBlockServiceImpl()` for real audio processing
+- **Testing**: Use `MockAudioBlockService()` for unit tests only
 - **Views**: Should inject real services, not instantiate mocks directly
+- **Status**: ✅ All production views fixed to use real services (January 2025)
 
-**CRITICAL**: Many SwiftUI views directly instantiate mock services in their body or previews, which causes production users to get non-functional audio processing.
+## Implementation Roadmap
+
+A comprehensive implementation plan exists in `PLAN.md` with:
+- **44 detailed steps** organized into 3 phases over 10 weeks
+- **26 parallel tasks** (Tasks A-CC) for efficient multi-agent execution
+- **Phase 1 (Critical)**: Missing AudioBlocks, real analysis, device management, import/export
+- **Phase 2 (Core)**: Parameter controls, template system, advanced parameters
+- **Phase 3 (Enhanced)**: Advanced features, performance optimization, UX improvements
+
+See `PLAN.md` for the complete step-by-step implementation guide with parallelization strategy.
 
 ## Critical Success Factors
 
@@ -455,7 +489,8 @@ Follow the established pattern:
 5. **Document performance characteristics** and limitations
 6. **Validate all parameters** with appropriate error handling
 7. **Maintain backward compatibility** when possible
-8. **🚨 NEVER use mock services in production views** - Always inject real services
-9. **⚠️ Check AudioBlockService.swift first** - Most blocks are implemented as private classes, not separate files
+8. **Use real services (`AudioBlockServiceImpl`)** in all production code
+9. **Check AudioBlockService.swift first** - Most blocks are private classes there
+10. **Follow the PLAN.md roadmap** for systematic implementation
 
 This guide should enable any AI agent to understand the project structure, follow established patterns, and make appropriate technical decisions when extending or modifying the Sounder codebase.

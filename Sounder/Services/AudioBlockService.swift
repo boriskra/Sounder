@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import Accelerate
 
 /// Service contract for audio processing of signal blocks
 public protocol AudioBlockService {
@@ -85,6 +86,44 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
 
     private let eventPublisher: PassthroughSubject<AudioBlockEvent, Never> = PassthroughSubject<AudioBlockEvent, Never>()
 
+    // Analysis state updated from the render callback and read on the main actor
+    private let analysisQueue = DispatchQueue(label: "com.sounder.AudioBlockService.analysis", qos: .userInitiated)
+    private let analysisFFTSize: Int = 2048
+    private let analysisSmoothing: Float = 0.85
+    private let minimumLevel: Float = 1.0e-5
+    private let analysisLog2n: vDSP_Length
+    private var analysisFFTSetup: FFTSetup?
+    private var analysisWindow: [Float]
+    private var analysisRingBuffer: [Float]
+    private var analysisRingIndex: Int = 0
+    private var analysisRingCount: Int = 0
+    private var analysisWorkingBuffer: [Float]
+    private var analysisReal: [Float]
+    private var analysisImag: [Float]
+    private var latestSpectrumMagnitudes: [Float]
+    private var latestPeakLinear: Float = 0.0
+    private var latestRMSLinear: Float = 0.0
+    private var latestFrequencyEstimate: Double?
+    private var analysisSampleRate: Double = 48_000.0
+
+    public init() {
+        analysisLog2n = vDSP_Length(log2(Float(analysisFFTSize)))
+        analysisWindow = Array(repeating: 0.0, count: analysisFFTSize)
+        vDSP_hann_window(&analysisWindow, vDSP_Length(analysisFFTSize), Int32(vDSP_HANN_NORM))
+        analysisRingBuffer = Array(repeating: 0.0, count: analysisFFTSize)
+        analysisWorkingBuffer = Array(repeating: 0.0, count: analysisFFTSize)
+        analysisReal = Array(repeating: 0.0, count: analysisFFTSize / 2)
+        analysisImag = Array(repeating: 0.0, count: analysisFFTSize / 2)
+        latestSpectrumMagnitudes = Array(repeating: 0.0, count: analysisFFTSize / 2)
+        analysisFFTSetup = vDSP_create_fftsetup(analysisLog2n, FFTRadix(kFFTRadix2))
+    }
+
+    deinit {
+        if let setup = analysisFFTSetup {
+            vDSP_destroy_fftsetup(setup)
+        }
+    }
+
     // MARK: - Audio Engine Management
 
     public func initializeAudioEngine(sampleRate: Double, bufferSize: UInt32) async throws {
@@ -108,6 +147,13 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             graphScheduler = AudioGraphScheduler(frameSize: frameSize, sampleRate: sampleRate)
             print("🎛️ [DEBUG] AudioBlockService.initializeAudioEngine() - Created AudioGraphScheduler with timeline")
 
+            analysisQueue.sync {
+                if analysisFFTSetup == nil {
+                    analysisFFTSetup = vDSP_create_fftsetup(analysisLog2n, FFTRadix(kFFTRadix2))
+                }
+                resetAnalysisStateLocked(sampleRate: sampleRate)
+            }
+            
             // Configure audio session (iOS only)
             #if os(iOS)
             let audioSession: AVAudioSession = AVAudioSession.sharedInstance()
@@ -176,6 +222,11 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             for block in registeredBlocks.values {
                 block.reset()
             }
+        }
+
+        analysisQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.resetAnalysisStateLocked(sampleRate: self.analysisSampleRate)
         }
     }
 
@@ -431,28 +482,63 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     // MARK: - Audio Analysis
 
     public func getSpectrumData(for blockId: UUID?) async -> [Float] {
-        // Placeholder implementation
-        // In a real implementation, this would analyze the audio signal using FFT
-        let sampleCount: Int = 512
-        return (0..<sampleCount).map { i in
-            let frequency: Float = Float(i) * 48000.0 / Float(sampleCount)
-            let magnitude: Float = 1.0 / (1.0 + frequency / 1000.0) // Simulate -6dB/octave rolloff
-            return magnitude * Float.random(in: 0.8...1.2) // Add some variance
+        if let blockId,
+           let analyzerBlock = registeredBlocks[blockId] as? SpectrumAnalyzerBlock {
+            let nyquist = (audioFormat?.sampleRate ?? analysisSampleRate) / 2.0
+            return analyzerBlock.getSpectrumInRange(minFreq: 0.0, maxFreq: nyquist)
+        }
+
+        return analysisQueue.sync {
+            latestSpectrumMagnitudes
         }
     }
 
     public func getLevelMeterData(for blockId: UUID?) async -> (peak: Float, rms: Float) {
-        // Placeholder implementation
-        // In a real implementation, this would measure actual audio levels
-        let rms: Float = Float.random(in: 0.1...0.8)
-        let peak: Float = rms * Float.random(in: 1.1...1.4)
-        return (peak: peak, rms: rms)
+        if let blockId,
+           let levelBlock = registeredBlocks[blockId] as? LevelMeterAudioBlock {
+            let levels = levelBlock.currentLinearLevels()
+            let peak = Self.linearAmplitudeToDecibels(Float(levels.peak), floor: -120.0)
+            let rms = Self.linearAmplitudeToDecibels(Float(levels.rms), floor: -120.0)
+            return (peak: peak, rms: rms)
+        }
+
+        return analysisQueue.sync {
+            let peak = Self.linearAmplitudeToDecibels(max(latestPeakLinear, minimumLevel), floor: -120.0)
+            let rms = Self.linearAmplitudeToDecibels(max(latestRMSLinear, minimumLevel), floor: -120.0)
+            return (peak: peak, rms: rms)
+        }
     }
 
     public func getFrequencyAnalysis(for blockId: UUID) async -> Double? {
-        // Placeholder implementation
-        // In a real implementation, this would analyze the dominant frequency
-        return Double.random(in: 100...10000)
+        if let frequencyBlock = registeredBlocks[blockId] as? FrequencyCounterAudioBlock {
+            return frequencyBlock.currentFrequencyEstimate()
+        }
+
+        if let analyzerBlock = registeredBlocks[blockId] as? SpectrumAnalyzerBlock {
+            let nyquist = (audioFormat?.sampleRate ?? analysisSampleRate) / 2.0
+            let spectrum = analyzerBlock.getSpectrumInRange(minFreq: 0.0, maxFreq: nyquist)
+            guard spectrum.count > 1 else { return nil }
+
+            var maxValue: Float = 0.0
+            var maxIndex: Int = 1
+            for index in 1..<spectrum.count where spectrum[index] > maxValue {
+                maxValue = spectrum[index]
+                maxIndex = index
+            }
+
+            if maxValue <= Float.leastNonzeroMagnitude {
+                return nil
+            }
+
+            let fftSize = analyzerBlock.windowSize
+            let sampleRate = audioFormat?.sampleRate ?? analysisSampleRate
+            let binFrequency = Double(maxIndex) * sampleRate / Double(fftSize)
+            return binFrequency
+        }
+
+        return analysisQueue.sync {
+            latestFrequencyEstimate
+        }
     }
 
     // MARK: - Performance Monitoring
@@ -469,12 +555,156 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     }
 
     public func getAudioLatency() async -> Double {
-        // Placeholder implementation
-        // In a real implementation, this would measure actual latency
-        return Double.random(in: 5.0...15.0) // 5-15ms typical for modern systems
+        guard let engine = audioEngine else { return 0.0 }
+
+        let outputNode = engine.outputNode
+        let hardwareLatency = outputNode.presentationLatency
+        let engineLatency = engine.latency
+        let outputFormat = outputNode.outputFormat(forBus: 0)
+        let sampleRate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : analysisSampleRate
+        let bufferDuration = sampleRate > 0 ? Double(frameSize) / sampleRate : 0.0
+        let totalLatency = (hardwareLatency + engineLatency + bufferDuration) * 1000.0
+        return max(totalLatency, 0.0)
     }
 
     // MARK: - Private Methods
+
+    nonisolated(unsafe) private func scheduleAnalysisUpdate(samples: [Float], sampleRate: Double) {
+        guard !samples.isEmpty else { return }
+        analysisQueue.async { [weak self] in
+            self?.updateAnalysis(with: samples, sampleRate: sampleRate)
+        }
+    }
+
+    nonisolated(unsafe) private func updateAnalysis(with samples: [Float], sampleRate: Double) {
+        appendSamplesToRing(samples)
+        updateLevelMetrics(with: samples)
+        refreshSpectrumIfNeeded(sampleRate: sampleRate)
+    }
+
+    nonisolated(unsafe) private func appendSamplesToRing(_ samples: [Float]) {
+        guard analysisFFTSize > 0 else { return }
+
+        for sample in samples {
+            analysisRingBuffer[analysisRingIndex] = sample
+            analysisRingIndex = (analysisRingIndex + 1) % analysisFFTSize
+            if analysisRingCount < analysisFFTSize {
+                analysisRingCount += 1
+            }
+        }
+    }
+
+    nonisolated(unsafe) private func updateLevelMetrics(with samples: [Float]) {
+        guard !samples.isEmpty else { return }
+
+        var peakValue: Float = 0.0
+        vDSP_maxmgv(samples, 1, &peakValue, vDSP_Length(samples.count))
+
+        let decayedPeak = latestPeakLinear * analysisSmoothing
+        latestPeakLinear = max(peakValue, decayedPeak)
+
+        var meanSquare: Float = 0.0
+        vDSP_measqv(samples, 1, &meanSquare, vDSP_Length(samples.count))
+        let rms = sqrt(meanSquare)
+
+        latestRMSLinear = analysisSmoothing * latestRMSLinear + (1.0 - analysisSmoothing) * rms
+    }
+
+    nonisolated(unsafe) private func refreshSpectrumIfNeeded(sampleRate: Double) {
+        guard analysisRingCount == analysisFFTSize,
+              let setup = analysisFFTSetup else { return }
+
+        for index in 0..<analysisFFTSize {
+            let ringIndex = (analysisRingIndex + index) % analysisFFTSize
+            analysisWorkingBuffer[index] = analysisRingBuffer[ringIndex]
+        }
+
+        vDSP_vmul(analysisWorkingBuffer, 1, analysisWindow, 1, &analysisWorkingBuffer, 1, vDSP_Length(analysisFFTSize))
+
+        let halfSize = analysisFFTSize / 2
+
+        analysisReal.withUnsafeMutableBufferPointer { realPtr in
+            analysisImag.withUnsafeMutableBufferPointer { imagPtr in
+                guard let realBase = realPtr.baseAddress,
+                      let imagBase = imagPtr.baseAddress else { return }
+
+                analysisWorkingBuffer.withUnsafeBufferPointer { workPtr in
+                    guard let workBase = workPtr.baseAddress else { return }
+
+                    for bin in 0..<halfSize {
+                        realBase[bin] = workBase[bin * 2]
+                        let oddIndex = bin * 2 + 1
+                        imagBase[bin] = oddIndex < analysisFFTSize ? workBase[oddIndex] : 0.0
+                    }
+                }
+
+                var split = DSPSplitComplex(realp: realBase, imagp: imagBase)
+                vDSP_fft_zrip(setup, &split, 1, analysisLog2n, FFTDirection(FFT_FORWARD))
+
+                var scale: Float = 1.0 / Float(analysisFFTSize)
+                vDSP_vsmul(realBase, 1, &scale, realBase, 1, vDSP_Length(halfSize))
+                vDSP_vsmul(imagBase, 1, &scale, imagBase, 1, vDSP_Length(halfSize))
+
+                latestSpectrumMagnitudes.withUnsafeMutableBufferPointer { magnitudePtr in
+                    guard let magnitudeBase = magnitudePtr.baseAddress else { return }
+                    vDSP_zvabs(&split, 1, magnitudeBase, 1, vDSP_Length(halfSize))
+                }
+            }
+        }
+
+        latestFrequencyEstimate = computeDominantFrequency(sampleRate: sampleRate)
+    }
+
+    nonisolated(unsafe) private func computeDominantFrequency(sampleRate: Double) -> Double? {
+        guard latestSpectrumMagnitudes.count > 1 else { return nil }
+
+        var peakValue: Float = 0.0
+        var peakIndex: vDSP_Length = 0
+
+        latestSpectrumMagnitudes.withUnsafeBufferPointer { magnitudesPtr in
+            guard let base = magnitudesPtr.baseAddress, magnitudesPtr.count > 1 else { return }
+            vDSP_maxvi(base + 1, 1, &peakValue, &peakIndex, vDSP_Length(magnitudesPtr.count - 1))
+        }
+
+        if peakValue <= Float.leastNonzeroMagnitude {
+            return nil
+        }
+
+        let fundamentalIndex = Int(peakIndex) + 1
+        let nyquistIndex = latestSpectrumMagnitudes.count - 1
+
+        if fundamentalIndex <= 0 || fundamentalIndex >= nyquistIndex {
+            return Double(fundamentalIndex) * sampleRate / Double(analysisFFTSize)
+        }
+
+        let left = latestSpectrumMagnitudes[fundamentalIndex - 1]
+        let center = latestSpectrumMagnitudes[fundamentalIndex]
+        let right = latestSpectrumMagnitudes[fundamentalIndex + 1]
+
+        let denominator = (left - 2.0 * center + right)
+        let adjustment = denominator != 0.0 ? 0.5 * (left - right) / denominator : 0.0
+        let refinedBin = Double(fundamentalIndex) + Double(adjustment)
+
+        return refinedBin * sampleRate / Double(analysisFFTSize)
+    }
+
+    nonisolated(unsafe) private func resetAnalysisStateLocked(sampleRate: Double) {
+        analysisSampleRate = sampleRate
+        analysisRingBuffer = Array(repeating: 0.0, count: analysisFFTSize)
+        analysisWorkingBuffer = Array(repeating: 0.0, count: analysisFFTSize)
+        analysisRingIndex = 0
+        analysisRingCount = 0
+        latestSpectrumMagnitudes = Array(repeating: 0.0, count: analysisFFTSize / 2)
+        latestPeakLinear = 0.0
+        latestRMSLinear = 0.0
+        latestFrequencyEstimate = nil
+    }
+
+    private static func linearAmplitudeToDecibels(_ amplitude: Float, floor: Float) -> Float {
+        let clamped = max(amplitude, 1.0e-9)
+        let decibels = 20.0 * log10f(clamped)
+        return max(decibels, floor)
+    }
 
     private func createAudioBlock(for block: SignalBlock) throws -> AudioBlock {
         switch block.type {
@@ -512,6 +742,12 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             return AmplifierAudioBlock(block: block)
         case .audioOutput:
             return AudioOutputAudioBlock(block: block)
+        case .spectrumAnalyzer:
+            return SpectrumAnalyzerBlock(signalBlock: block)
+        case .levelMeter:
+            return LevelMeterAudioBlock(block: block)
+        case .frequencyCounter:
+            return FrequencyCounterAudioBlock(block: block)
         default:
             throw AudioBlockError.blockRegistrationError("Unsupported block type: \(block.type)")
         }
@@ -627,6 +863,9 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
                     channelData?[frame] = sample
                 }
             }
+
+            let sampleRate = self.audioFormat?.sampleRate ?? self.analysisSampleRate
+            self.scheduleAnalysisUpdate(samples: outputSamples, sampleRate: sampleRate)
 
             return noErr
         }
@@ -2685,6 +2924,281 @@ private class AmplitudeModulatorAudioBlock: AudioBlock {
     private static func clampToAudioRange(_ value: Double) -> Double {
         if value > 1.0 { return 1.0 }
         if value < -1.0 { return -1.0 }
+        return value
+    }
+}
+
+/// Level meter with peak and RMS tracking using timeline-aware smoothing
+private class LevelMeterAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .levelMeter
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["peak", "rms"]
+
+    private var timeConstant: Double
+    private var peakEnvelope: Double = 0.0
+    private var rmsSquaredEnvelope: Double = 0.0
+    private var lastSampleRate: Double = 48_000.0
+
+    init(block: SignalBlock) {
+        id = block.id
+        let timeConstantValue = block.parameters["timeConstant"]?.value ?? 0.1
+        timeConstant = Self.sanitizeTimeConstant(timeConstantValue)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else {
+            return ["peak": [], "rms": []]
+        }
+
+        let inputSignal = inputs["input"] ?? []
+        let localSampleRate: Double
+        if sampleRate.isFinite, sampleRate > 0.0 {
+            lastSampleRate = sampleRate
+            localSampleRate = sampleRate
+        } else {
+            localSampleRate = lastSampleRate
+        }
+
+        let smoothing = Self.smoothingCoefficient(timeConstant: timeConstant, sampleRate: localSampleRate)
+        var peakState = peakEnvelope
+        var rmsState = rmsSquaredEnvelope
+
+        let processedSamples = min(frameCount, inputSignal.count)
+        if processedSamples > 0 {
+            for index in 0..<processedSamples {
+                let sampleValue = Double(inputSignal[index])
+                let magnitude = abs(sampleValue)
+                peakState = max(magnitude, smoothing * peakState + (1.0 - smoothing) * magnitude)
+                let squared = magnitude * magnitude
+                rmsState = smoothing * rmsState + (1.0 - smoothing) * squared
+            }
+        }
+
+        if processedSamples < frameCount {
+            let remaining = frameCount - processedSamples
+            if remaining > 0 {
+                let decay = pow(smoothing, Double(remaining))
+                peakState *= decay
+                rmsState *= decay
+            }
+        }
+
+        peakEnvelope = Self.clampToUnitRange(peakState)
+        rmsSquaredEnvelope = max(rmsState, 0.0)
+
+        let rmsValue = sqrt(rmsSquaredEnvelope)
+        let peakOutput = Float(peakEnvelope)
+        let rmsOutput = Float(Self.clampToUnitRange(rmsValue))
+
+        return [
+            "peak": Array(repeating: peakOutput, count: frameCount),
+            "rms": Array(repeating: rmsOutput, count: frameCount)
+        ]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: 0,
+            sampleRate: lastSampleRate
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "timeConstant":
+            timeConstant = Self.sanitizeTimeConstant(value)
+            print("📈 [DEBUG] LevelMeterAudioBlock.setParameter(timeConstant) = \(timeConstant)s")
+        default:
+            break
+        }
+    }
+
+    func currentLinearLevels() -> (peak: Double, rms: Double) {
+        let rmsValue = sqrt(max(rmsSquaredEnvelope, 0.0))
+        return (
+            peak: Self.clampToUnitRange(peakEnvelope),
+            rms: Self.clampToUnitRange(rmsValue)
+        )
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        peakEnvelope = 0.0
+        rmsSquaredEnvelope = 0.0
+        if sampleRate.isFinite, sampleRate > 0.0 {
+            lastSampleRate = sampleRate
+        }
+        print("📈 [DEBUG] LevelMeterAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: lastSampleRate)
+    }
+
+    private static func sanitizeTimeConstant(_ value: Double) -> Double {
+        if value.isNaN || value <= 0.0 {
+            return 0.1
+        }
+        return min(max(value, 0.01), 2.0)
+    }
+
+    private static func smoothingCoefficient(timeConstant: Double, sampleRate: Double) -> Double {
+        guard sampleRate.isFinite, sampleRate > 0.0 else { return 0.0 }
+        let tc = max(timeConstant, 0.0005)
+        let windowSamples = tc * sampleRate
+        return exp(-1.0 / max(windowSamples, 1.0))
+    }
+
+    private static func clampToUnitRange(_ value: Double) -> Double {
+        if value < 0.0 { return 0.0 }
+        if value > 1.0 { return 1.0 }
+        return value
+    }
+}
+
+/// Frequency counter with zero-crossing detection and exponential averaging
+private class FrequencyCounterAudioBlock: AudioBlock {
+    let id: UUID
+    let type: BlockType = .frequencyCounter
+    let inputPorts: [String] = ["input"]
+    let outputPorts: [String] = ["frequency"]
+
+    private var sampleWindow: Double
+    private var currentFrequency: Double = 0.0
+    private var lastSampleRate: Double = 48_000.0
+    private var previousSampleValue: Double = 0.0
+    private var previousSampleIndex: UInt64 = 0
+    private var hasPreviousSample: Bool = false
+    private var lastZeroCrossingSample: Double?
+
+    init(block: SignalBlock) {
+        id = block.id
+        let windowValue = block.parameters["sampleWindow"]?.value ?? 0.1
+        sampleWindow = Self.sanitizeSampleWindow(windowValue)
+    }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]] {
+        guard frameCount > 0 else {
+            return ["frequency": []]
+        }
+
+        let inputSignal = inputs["input"] ?? []
+        let localSampleRate: Double
+        if sampleRate.isFinite, sampleRate > 0.0 {
+            lastSampleRate = sampleRate
+            localSampleRate = sampleRate
+        } else {
+            localSampleRate = lastSampleRate
+        }
+
+        let smoothing = Self.smoothingCoefficient(sampleWindow: sampleWindow, sampleRate: localSampleRate)
+        var frequencyOutput: [Float] = []
+        frequencyOutput.reserveCapacity(frameCount)
+
+        for frame in 0..<frameCount {
+            let signalValue = frame < inputSignal.count ? Double(inputSignal[frame]) : 0.0
+            currentFrequency *= smoothing
+
+            if hasPreviousSample,
+               previousSampleValue <= 0.0,
+               signalValue > 0.0 {
+                let denom = abs(previousSampleValue) + abs(signalValue)
+                let crossingOffset = denom > 0.0 ? abs(previousSampleValue) / denom : 0.0
+                let crossingSample = Double(previousSampleIndex) + crossingOffset
+
+                if let lastCrossing = lastZeroCrossingSample {
+                    let periodSamples = crossingSample - lastCrossing
+                    if periodSamples > 0.0, localSampleRate > 0.0 {
+                        let estimatedFrequency = localSampleRate / periodSamples
+                        currentFrequency += (1.0 - smoothing) * Self.clampFrequency(estimatedFrequency, sampleRate: localSampleRate)
+                    }
+                } else if localSampleRate > 0.0 {
+                    currentFrequency += (1.0 - smoothing) * (localSampleRate / max(sampleWindow * localSampleRate, 1.0))
+                }
+
+                lastZeroCrossingSample = crossingSample
+            }
+
+            previousSampleValue = signalValue
+            previousSampleIndex = startSample + UInt64(frame)
+            hasPreviousSample = true
+
+            let clampedFrequency = Self.clampFrequency(currentFrequency, sampleRate: localSampleRate)
+            frequencyOutput.append(Float(clampedFrequency))
+        }
+
+        return ["frequency": frequencyOutput]
+    }
+
+    func processAudio(inputs: [String: [Float]], frameCount: Int) -> [String: [Float]] {
+        return processAudio(
+            inputs: inputs,
+            frameCount: frameCount,
+            startSample: hasPreviousSample ? (previousSampleIndex + 1) : 0,
+            sampleRate: lastSampleRate
+        )
+    }
+
+    func setParameter(name: String, value: Double) {
+        switch name {
+        case "sampleWindow":
+            sampleWindow = Self.sanitizeSampleWindow(value)
+            print("📏 [DEBUG] FrequencyCounterAudioBlock.setParameter(sampleWindow) = \(sampleWindow)s")
+        default:
+            break
+        }
+    }
+
+    func currentFrequencyEstimate() -> Double {
+        return Self.clampFrequency(currentFrequency, sampleRate: lastSampleRate)
+    }
+
+    func reset(to startSample: UInt64, sampleRate: Double) {
+        currentFrequency = 0.0
+        lastZeroCrossingSample = nil
+        hasPreviousSample = false
+        previousSampleIndex = startSample
+        previousSampleValue = 0.0
+        if sampleRate.isFinite, sampleRate > 0.0 {
+            lastSampleRate = sampleRate
+        }
+        print("📏 [DEBUG] FrequencyCounterAudioBlock.reset(to:) - Reset to sample \(startSample) at \(sampleRate)Hz")
+    }
+
+    func reset() {
+        reset(to: 0, sampleRate: lastSampleRate)
+    }
+
+    private static func sanitizeSampleWindow(_ value: Double) -> Double {
+        if value.isNaN || value <= 0.0 {
+            return 0.1
+        }
+        return min(max(value, 0.01), 1.0)
+    }
+
+    private static func smoothingCoefficient(sampleWindow: Double, sampleRate: Double) -> Double {
+        guard sampleRate.isFinite, sampleRate > 0.0 else { return 0.0 }
+        let windowSamples = max(sampleWindow * sampleRate, 1.0)
+        return exp(-1.0 / windowSamples)
+    }
+
+    private static func clampFrequency(_ value: Double, sampleRate: Double) -> Double {
+        guard value.isFinite else { return 0.0 }
+        let nyquist = max(sampleRate / 2.0, 1.0)
+        if value < 0.0 { return 0.0 }
+        if value > nyquist { return nyquist }
         return value
     }
 }

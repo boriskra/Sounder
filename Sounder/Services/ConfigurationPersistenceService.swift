@@ -273,8 +273,151 @@ class ConfigurationPersistenceService: ObservableObject {
     }
 
     private func importFromLegacy(_ url: URL) async throws -> BlockConfiguration {
-        // Handle legacy file formats if needed
-        throw ConfigurationPersistenceError.unsupportedFormat("Legacy format not yet supported")
+        let data: Data = try Data(contentsOf: url)
+
+        guard !data.isEmpty else {
+            throw ConfigurationPersistenceError.invalidFormat("Legacy file is empty")
+        }
+
+        let jsonObject: Any
+        do {
+            jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
+        } catch {
+            throw ConfigurationPersistenceError.invalidFormat("Legacy file is not valid JSON")
+        }
+
+        guard let root = jsonObject as? [String: Any] else {
+            throw ConfigurationPersistenceError.invalidFormat("Legacy file must contain a JSON object")
+        }
+
+        let name: String = (root["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? url.deletingPathExtension().lastPathComponent
+
+        let legacyDescription: String? = (root["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var metadata: [String: String] = (root["metadata"] as? [String: String]) ?? [:]
+        if let legacyDescription, metadata["description"].flatMap({ !$0.isEmpty }) != true {
+            metadata["description"] = legacyDescription
+        }
+
+        let createdDate: Date = parseLegacyDate(
+            root["createdAt"],
+            fallbackKeys: ["created", "created_date", "dateCreated"],
+            in: root
+        ) ?? Date()
+
+        let modifiedDate: Date = parseLegacyDate(
+            root["modifiedAt"],
+            fallbackKeys: ["updatedAt", "modified", "lastModified"],
+            in: root
+        ) ?? createdDate
+
+        let legacyBlocks: [[String: Any]] = (root["blocks"] as? [[String: Any]]) ?? []
+        var blocks: [SignalBlock] = []
+        blocks.reserveCapacity(legacyBlocks.count)
+
+        for blockDict in legacyBlocks {
+            guard let typeString = blockDict["type"] as? String,
+                  let blockType = BlockType(rawValue: typeString) else {
+                continue
+            }
+
+            let idString: String? = (blockDict["id"] as? String)
+                ?? (blockDict["uuid"] as? String)
+                ?? (blockDict["identifier"] as? String)
+            let blockId: UUID = idString.flatMap(UUID.init(uuidString:)) ?? UUID()
+
+            let legacyTitle: String? = (blockDict["title"] as? String)
+                ?? (blockDict["name"] as? String)
+            let positionPoint: CGPoint = parseLegacyPoint(from: blockDict)
+            let isActive: Bool = parseLegacyBool(from: blockDict, keys: ["isActive", "active", "enabled"]) ?? true
+
+            var builder: ImportedBlockBuilder = ImportedBlockBuilder(
+                id: blockId,
+                type: blockType,
+                title: legacyTitle ?? "",
+                position: positionPoint,
+                isActive: isActive
+            )
+
+            if let parameterContainer = blockDict["parameters"] as? [String: Any] {
+                for (key, value) in parameterContainer {
+                    if let parameter = parseLegacyParameter(named: key, rawValue: value) {
+                        builder.setParameter(parameter)
+                    }
+                }
+            }
+
+            if let parameterList = blockDict["parameterList"] as? [[String: Any]] {
+                for paramDict in parameterList {
+                    guard let name = paramDict["name"] as? String else { continue }
+                    if let parameter = parseLegacyParameter(named: name, rawValue: paramDict) {
+                        builder.setParameter(parameter)
+                    }
+                }
+            }
+
+            do {
+                blocks.append(try builder.build())
+            } catch {
+                throw ConfigurationPersistenceError.invalidFormat("Invalid legacy block data for type \(blockType.rawValue)")
+            }
+        }
+
+        let blockIdentifiers: Set<UUID> = Set(blocks.map(\.id))
+
+        let legacyConnections: [[String: Any]] = (root["connections"] as? [[String: Any]]) ?? []
+        var connections: [Connection] = []
+        connections.reserveCapacity(legacyConnections.count)
+
+        for connectionDict in legacyConnections {
+            guard let sourceId = parseLegacyUUID(from: connectionDict, keys: ["fromBlockId", "sourceBlockId", "from", "source"]),
+                  let destinationId = parseLegacyUUID(from: connectionDict, keys: ["toBlockId", "destinationBlockId", "to", "destination"]),
+                  sourceId != destinationId,
+                  blockIdentifiers.contains(sourceId),
+                  blockIdentifiers.contains(destinationId) else {
+                continue
+            }
+
+            guard let sourcePort = parseLegacyString(from: connectionDict, keys: ["fromPort", "sourcePort", "outputPort"]),
+                  let destinationPort = parseLegacyString(from: connectionDict, keys: ["toPort", "destinationPort", "inputPort"]),
+                  !sourcePort.isEmpty,
+                  !destinationPort.isEmpty else {
+                continue
+            }
+
+            let connectionId: UUID = parseLegacyUUID(from: connectionDict, keys: ["id", "identifier", "uuid"]) ?? UUID()
+            let signalTypeString: String? = parseLegacyString(from: connectionDict, keys: ["signalType", "type", "kind"])
+            let signalType: SignalType = signalTypeString.flatMap { SignalType(rawValue: $0.lowercased()) } ?? .audio
+            let isActive: Bool = parseLegacyBool(from: connectionDict, keys: ["isActive", "active"]) ?? true
+
+            connections.append(
+                Connection(
+                    id: connectionId,
+                    sourceBlockId: sourceId,
+                    sourcePort: sourcePort,
+                    destinationBlockId: destinationId,
+                    destinationPort: destinationPort,
+                    signalType: signalType,
+                    isActive: isActive
+                )
+            )
+        }
+
+        let version: String = (root["version"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? currentVersion
+
+        return BlockConfiguration(
+            id: UUID(),
+            name: name,
+            createdDate: createdDate,
+            modifiedDate: max(modifiedDate, createdDate),
+            blocks: blocks,
+            connections: connections,
+            version: version,
+            metadata: metadata
+        )
     }
 
     // MARK: - Backup Management
@@ -829,9 +972,549 @@ class CSVConfigurationExporter {
     }
 }
 
-class XMLConfigurationImporter {
+// MARK: - Import Helpers
+
+private struct ImportedParameterData {
+    let name: String
+    let displayName: String?
+    let value: Double?
+    let minimum: Double?
+    let maximum: Double?
+    let unit: String?
+    let step: Double?
+
+    func makeParameter(defaultParameter: BlockParameter?) -> BlockParameter {
+        let base: BlockParameter? = defaultParameter
+        let resolvedDisplayName: String = displayName ?? base?.displayName ?? displayNameForParameter(name)
+        let defaults = inferredRange(for: name, expectedValue: value)
+        let minValue: Double = minimum ?? base?.minimumValue ?? defaults.min
+        let maxValue: Double = maximum ?? base?.maximumValue ?? defaults.max
+        let unitValue: String = unit ?? base?.unit ?? defaults.unit
+        let isLogarithmic: Bool = base?.isLogarithmic ?? defaults.isLog
+        let orderedMin: Double = min(minValue, maxValue)
+        let orderedMax: Double = max(minValue, maxValue)
+        let stepCandidate: Double = step ?? base?.stepSize ?? inferredStepSize(min: orderedMin, max: orderedMax)
+        let stepSize: Double = max(stepCandidate, 0.0001)
+        let defaultValue: Double = value ?? base?.value ?? (orderedMin + orderedMax) / 2.0
+        let clampedValue: Double = min(max(defaultValue, orderedMin), orderedMax)
+
+        return BlockParameter(
+            name: name,
+            displayName: resolvedDisplayName,
+            value: clampedValue,
+            minimumValue: orderedMin,
+            maximumValue: orderedMax,
+            unit: unitValue,
+            stepSize: stepSize,
+            isLogarithmic: isLogarithmic
+        )
+    }
+}
+
+private struct ImportedBlockBuilder {
+    let id: UUID
+    let type: BlockType
+    var title: String
+    var position: CGPoint
+    var isActive: Bool
+    private var parameterOverrides: [String: ImportedParameterData] = [:]
+
+    mutating func setParameter(_ parameter: ImportedParameterData) {
+        parameterOverrides[parameter.name] = parameter
+    }
+
+    func build() throws -> SignalBlock {
+        var parameters: [String: BlockParameter] = type.createDefaultParameters()
+
+        for (name, override) in parameterOverrides {
+            parameters[name] = override.makeParameter(defaultParameter: parameters[name])
+        }
+
+        for required in type.requiredParameters where parameters[required] == nil {
+            parameters[required] = fallbackParameter(named: required)
+        }
+
+        let resolvedTitle: String = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle: String = resolvedTitle.isEmpty ? type.displayName : resolvedTitle
+        let sanitizedPosition: CGPoint = CGPoint(
+            x: sanitizeCoordinate(position.x),
+            y: sanitizeCoordinate(position.y)
+        )
+
+        return SignalBlock(
+            id: id,
+            type: type,
+            title: finalTitle,
+            position: sanitizedPosition,
+            parameters: parameters,
+            inputPorts: type.defaultInputPorts,
+            outputPorts: type.defaultOutputPorts,
+            isActive: isActive
+        )
+    }
+}
+
+private func fallbackParameter(named name: String) -> BlockParameter {
+    let lowerName: String = name.lowercased()
+
+    if lowerName.contains("frequency") {
+        return .frequency(name: name, displayName: displayNameForParameter(name))
+    } else if lowerName.contains("gain") || lowerName.contains("amplitude") {
+        return .amplitude(name: name, displayName: displayNameForParameter(name))
+    } else if lowerName.contains("time") || lowerName.contains("duration") || lowerName.contains("window") {
+        return .time(name: name, displayName: displayNameForParameter(name), value: 0.1, minTime: 0.0, maxTime: 10.0)
+    } else if lowerName.contains("depth") || lowerName.contains("mix") || lowerName.contains("percentage") {
+        return .percentage(name: name, displayName: displayNameForParameter(name))
+    }
+
+    return BlockParameter(
+        name: name,
+        displayName: displayNameForParameter(name),
+        value: 0.0,
+        minimumValue: 0.0,
+        maximumValue: 1.0,
+        unit: "",
+        stepSize: 0.1
+    )
+}
+
+private func sanitizeCoordinate(_ value: Double) -> Double {
+    guard value.isFinite else { return 0.0 }
+    return max(0.0, value)
+}
+
+private func displayNameForParameter(_ name: String) -> String {
+    let cleaned: String = name.replacingOccurrences(of: "_", with: " ")
+    let parts: [Substring] = cleaned.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+
+    guard !parts.isEmpty else {
+        return name.capitalized
+    }
+
+    return parts.map { part -> String in
+        let lower = part.lowercased()
+        return lower.prefix(1).uppercased() + lower.dropFirst()
+    }.joined(separator: " ")
+}
+
+private func inferredRange(for name: String, expectedValue: Double?) -> (min: Double, max: Double, unit: String, isLog: Bool) {
+    let lower: String = name.lowercased()
+
+    if lower.contains("frequency") {
+        return (20.0, 20000.0, "Hz", true)
+    } else if lower.contains("gain") || lower.contains("amplitude") {
+        return (-60.0, 6.0, "dB", false)
+    } else if lower.contains("depth") || lower.contains("mix") || lower.contains("amount") || lower.contains("percentage") {
+        return (0.0, 100.0, "%", false)
+    } else if lower.contains("time") || lower.contains("duration") || lower.contains("window") {
+        let value: Double = expectedValue ?? 1.0
+        return (0.0, max(value * 4.0, 1.0), "s", false)
+    } else if lower.contains("qfactor") || lower.contains("resonance") {
+        return (0.1, 10.0, "", false)
+    }
+
+    let fallbackValue: Double = expectedValue ?? 1.0
+    return (0.0, max(fallbackValue, 1.0), "", false)
+}
+
+private func inferredStepSize(min: Double, max: Double) -> Double {
+    let range: Double = max - min
+    if range <= 0 { return 0.1 }
+    let candidate: Double = range / 100.0
+    if candidate >= 1.0 {
+        return round(candidate)
+    }
+    if candidate >= 0.1 {
+        return 0.1
+    }
+    return max(candidate, 0.01)
+}
+
+private func parseLegacyDate(_ primaryValue: Any?, fallbackKeys: [String], in container: [String: Any]) -> Date? {
+    if let date = convertToDate(primaryValue) {
+        return date
+    }
+
+    for key in fallbackKeys {
+        if let match = container[key], let date = convertToDate(match) {
+            return date
+        }
+    }
+
+    return nil
+}
+
+private func convertToDate(_ value: Any?) -> Date? {
+    switch value {
+    case let date as Date:
+        return date
+    case let number as NSNumber:
+        return Date(timeIntervalSince1970: number.doubleValue)
+    case let double as Double:
+        return Date(timeIntervalSince1970: double)
+    case let string as String:
+        let trimmed: String = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let isoFormatter: ISO8601DateFormatter = ISO8601DateFormatter()
+        if let date = isoFormatter.date(from: trimmed) {
+            return date
+        }
+
+        let fallbackFormats: [String] = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"]
+        let formatter: DateFormatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+
+        for format in fallbackFormats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) {
+                return date
+            }
+        }
+
+        return nil
+    default:
+        return nil
+    }
+}
+
+private func parseLegacyPoint(from container: [String: Any]) -> CGPoint {
+    if let nested = container["position"] as? [String: Any] {
+        return parseLegacyPointValues(in: nested)
+    }
+    return parseLegacyPointValues(in: container)
+}
+
+private func parseLegacyPointValues(in container: [String: Any]) -> CGPoint {
+    let x: Double = parseLegacyDouble(from: container, keys: ["x", "xPos", "posX", "left"]) ?? 0.0
+    let y: Double = parseLegacyDouble(from: container, keys: ["y", "yPos", "posY", "top"]) ?? 0.0
+    return CGPoint(x: sanitizeCoordinate(x), y: sanitizeCoordinate(y))
+}
+
+private func parseLegacyBool(from container: [String: Any], keys: [String]) -> Bool? {
+    for key in keys {
+        if let value = container[key] {
+            if let bool = value as? Bool {
+                return bool
+            }
+            if let number = value as? NSNumber {
+                return number.intValue != 0
+            }
+            if let string = value as? String {
+                let lower = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if ["true", "yes", "1"].contains(lower) {
+                    return true
+                }
+                if ["false", "no", "0"].contains(lower) {
+                    return false
+                }
+            }
+        }
+    }
+    return nil
+}
+
+private func parseLegacyUUID(from container: [String: Any], keys: [String]) -> UUID? {
+    for key in keys {
+        if let stringValue = container[key] as? String,
+           let uuid = UUID(uuidString: stringValue) {
+            return uuid
+        }
+    }
+    return nil
+}
+
+private func parseLegacyString(from container: [String: Any], keys: [String]) -> String? {
+    for key in keys {
+        if let stringValue = container[key] as? String {
+            let trimmed = stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+    }
+    return nil
+}
+
+private func parseLegacyDouble(from container: [String: Any], keys: [String]) -> Double? {
+    for key in keys {
+        if let value = container[key],
+           let parsed = asDouble(value) {
+            return parsed
+        }
+    }
+    return nil
+}
+
+private func asDouble(_ value: Any?) -> Double? {
+    switch value {
+    case let double as Double:
+        return double
+    case let int as Int:
+        return Double(int)
+    case let int64 as Int64:
+        return Double(int64)
+    case let float as Float:
+        return Double(float)
+    case let number as NSNumber:
+        return number.doubleValue
+    case let string as String:
+        let trimmed: String = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(trimmed)
+    default:
+        return nil
+    }
+}
+
+private func parseLegacyParameter(named name: String, rawValue: Any) -> ImportedParameterData? {
+    if let dictionary = rawValue as? [String: Any] {
+        let value = asDouble(dictionary["value"]) ?? asDouble(dictionary["current"])
+        let minimum = asDouble(dictionary["minimum"]) ?? asDouble(dictionary["min"]) ?? asDouble(dictionary["lower"])
+        let maximum = asDouble(dictionary["maximum"]) ?? asDouble(dictionary["max"]) ?? asDouble(dictionary["upper"])
+        let unit = dictionary["unit"] as? String
+        let step = asDouble(dictionary["step"]) ?? asDouble(dictionary["stepSize"])
+        let displayName = dictionary["displayName"] as? String ?? dictionary["label"] as? String
+
+        return ImportedParameterData(
+            name: name,
+            displayName: displayName,
+            value: value,
+            minimum: minimum,
+            maximum: maximum,
+            unit: unit,
+            step: step
+        )
+    }
+
+    if let directValue = asDouble(rawValue) {
+        return ImportedParameterData(
+            name: name,
+            displayName: nil,
+            value: directValue,
+            minimum: nil,
+            maximum: nil,
+            unit: nil,
+            step: nil
+        )
+    }
+
+    return nil
+}
+
+private func parseDouble(from string: String?) -> Double? {
+    guard let string else { return nil }
+    return Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
+}
+
+private func parseBool(from string: String?) -> Bool? {
+    guard let string else { return nil }
+    let lower = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if ["true", "yes", "1"].contains(lower) {
+        return true
+    }
+    if ["false", "no", "0"].contains(lower) {
+        return false
+    }
+    return nil
+}
+
+// MARK: - XML Importer
+
+class XMLConfigurationImporter: NSObject, XMLParserDelegate {
+    private var configurationName: String?
+    private var configurationDescription: String?
+    private var configurationVersion: String?
+    private var createdDate: Date?
+    private var blocks: [SignalBlock] = []
+    private var connections: [Connection] = []
+    private var currentBlock: ImportedBlockBuilder?
+    private var currentElement: String?
+    private var accumulatedCharacters: String = ""
+    private var parseError: Error?
+
     func `import`(from url: URL) throws -> BlockConfiguration {
-        // Simplified XML import - in a full implementation this would use XMLParser
-        throw ConfigurationPersistenceError.unsupportedFormat("XML import not yet implemented")
+        resetState()
+
+        let data: Data = try Data(contentsOf: url)
+        let parser: XMLParser = XMLParser(data: data)
+        parser.delegate = self
+
+        if parser.parse(), parseError == nil {
+            let blockIds: Set<UUID> = Set(blocks.map(\.id))
+            let filteredConnections: [Connection] = connections.filter { connection in
+                blockIds.contains(connection.sourceBlockId) && blockIds.contains(connection.destinationBlockId)
+            }
+
+            let name: String = configurationName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                .flatMap { $0.isEmpty ? nil : $0 }
+                ?? url.deletingPathExtension().lastPathComponent
+
+            var metadata: [String: String] = [:]
+            if let description = configurationDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                metadata["description"] = description
+            }
+
+            let created: Date = createdDate ?? Date()
+            let modified: Date = Date()
+            let finalModified: Date = modified < created ? created : modified
+
+            return BlockConfiguration(
+                id: UUID(),
+                name: name,
+                createdDate: created,
+                modifiedDate: finalModified,
+                blocks: blocks,
+                connections: filteredConnections,
+                version: configurationVersion ?? "1.0",
+                metadata: metadata
+            )
+        }
+
+        if let parseError {
+            throw parseError
+        }
+
+        throw ConfigurationPersistenceError.invalidFormat("Unable to parse XML configuration")
+    }
+
+    private func resetState() {
+        configurationName = nil
+        configurationDescription = nil
+        configurationVersion = nil
+        createdDate = nil
+        blocks = []
+        connections = []
+        currentBlock = nil
+        currentElement = nil
+        accumulatedCharacters = ""
+        parseError = nil
+    }
+
+    // MARK: XMLParserDelegate
+
+    func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
+        self.parseError = parseError
+    }
+
+    func parser(_ parser: XMLParser,
+                didStartElement elementName: String,
+                namespaceURI: String?,
+                qualifiedName qName: String?,
+                attributes attributeDict: [String: String]) {
+        currentElement = elementName
+        accumulatedCharacters = ""
+
+        switch elementName {
+        case "SounderConfiguration":
+            configurationVersion = attributeDict["version"]
+            if let createdString = attributeDict["created"], let date = convertToDate(createdString) {
+                createdDate = date
+            }
+        case "Block":
+            guard let typeString = attributeDict["type"],
+                  let blockType = BlockType(rawValue: typeString) else {
+                parseError = ConfigurationPersistenceError.invalidFormat("Unknown block type in XML")
+                parser.abortParsing()
+                return
+            }
+
+            let blockId: UUID = attributeDict["id"].flatMap(UUID.init(uuidString:)) ?? UUID()
+            let isActive: Bool = attributeDict["active"].flatMap(parseBool) ?? attributeDict["isActive"].flatMap(parseBool) ?? true
+
+            currentBlock = ImportedBlockBuilder(
+                id: blockId,
+                type: blockType,
+                title: "",
+                position: .zero,
+                isActive: isActive
+            )
+        case "Position":
+            guard var builder = currentBlock else { return }
+            let x: Double = parseDouble(from: attributeDict["x"]) ?? 0.0
+            let y: Double = parseDouble(from: attributeDict["y"]) ?? 0.0
+            builder.position = CGPoint(x: x, y: y)
+            currentBlock = builder
+        case "Parameter":
+            guard var builder = currentBlock,
+                  let name = attributeDict["name"] else { return }
+
+            let parameter = ImportedParameterData(
+                name: name,
+                displayName: attributeDict["displayName"],
+                value: parseDouble(from: attributeDict["value"]),
+                minimum: parseDouble(from: attributeDict["min"]) ?? parseDouble(from: attributeDict["minimum"]),
+                maximum: parseDouble(from: attributeDict["max"]) ?? parseDouble(from: attributeDict["maximum"]),
+                unit: attributeDict["unit"],
+                step: parseDouble(from: attributeDict["step"]) ?? parseDouble(from: attributeDict["stepSize"])
+            )
+            builder.setParameter(parameter)
+            currentBlock = builder
+        case "Connection":
+            guard let sourceIdString = attributeDict["from"],
+                  let destinationIdString = attributeDict["to"],
+                  let sourceId = UUID(uuidString: sourceIdString),
+                  let destinationId = UUID(uuidString: destinationIdString),
+                  let sourcePort = attributeDict["fromPort"],
+                  let destinationPort = attributeDict["toPort"],
+                  !sourcePort.isEmpty,
+                  !destinationPort.isEmpty,
+                  sourceId != destinationId else {
+                return
+            }
+
+            let connectionId: UUID = attributeDict["id"].flatMap(UUID.init(uuidString:)) ?? UUID()
+            let signalType: SignalType = attributeDict["signalType"].flatMap { SignalType(rawValue: $0.lowercased()) } ?? .audio
+
+            let connection = Connection(
+                id: connectionId,
+                sourceBlockId: sourceId,
+                sourcePort: sourcePort,
+                destinationBlockId: destinationId,
+                destinationPort: destinationPort,
+                signalType: signalType,
+                isActive: true
+            )
+            connections.append(connection)
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser,
+                didEndElement elementName: String,
+                namespaceURI: String?,
+                qualifiedName qName: String?) {
+        let text: String = accumulatedCharacters.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch elementName {
+        case "Name":
+            configurationName = text
+        case "Description":
+            configurationDescription = text
+        case "Title":
+            if var builder = currentBlock {
+                builder.title = text
+                currentBlock = builder
+            }
+        case "Block":
+            guard let builder = currentBlock else { break }
+            do {
+                blocks.append(try builder.build())
+            } catch {
+                parseError = error
+                parser.abortParsing()
+            }
+            currentBlock = nil
+        default:
+            break
+        }
+
+        accumulatedCharacters = ""
+        currentElement = nil
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        accumulatedCharacters.append(string)
     }
 }

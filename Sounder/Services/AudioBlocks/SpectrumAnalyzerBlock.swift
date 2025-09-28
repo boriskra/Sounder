@@ -40,6 +40,8 @@ public class SpectrumAnalyzerBlock: AudioBlock {
     private var peakFrequency: Double = 0.0
     private var spectralCentroid: Double = 0.0
 
+    public var windowSize: Int { _windowSize }
+
     public init(signalBlock: SignalBlock, sampleRate: Double = 48000.0) {
         self.id = signalBlock.id
         self.sampleRate = sampleRate

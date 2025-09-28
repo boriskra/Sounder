@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import CoreAudio
+import AudioToolbox
 import Accelerate
 
 enum AudioServiceError: Error {
@@ -81,7 +82,13 @@ class AVFAudioService: AudioService, ObservableObject {
 
         // Initial population of available devices and sounds
         _availableOutputDevicesSubject.send(enumerateOutputDevices())
-        _availableSoundsSubject.send([Sound(name: "Sine Wave", waveform: .sine)]) // Default sound
+        _availableSoundsSubject.send([
+            Sound(
+                name: "Sine Wave",
+                waveform: .sine,
+                parameters: [Parameter(name: "frequency", value: 440.0)]
+            )
+        ])
 
         // Set initial currentOutputDevice and currentSound
         currentOutputDevice = _availableOutputDevicesSubject.value.first
@@ -162,12 +169,39 @@ class AVFAudioService: AudioService, ObservableObject {
     }
 
     private func setEngineOutputDevice(_ device: OutputDevice) {
-        // Placeholder: In a real application, this would involve complex CoreAudio APIs
-        // to change the output device of the AVAudioEngine, potentially requiring
-        // stopping and restarting the engine.
-        print("Attempting to set output device to: \(device.name) (ID: \(device.id))")
-        // For now, we just update the currentOutputDevice property.
-        // The actual routing would be handled by CoreAudio.
+        guard let deviceIDValue = UInt32(device.id) else {
+            print("Invalid audio device identifier: \(device.id)")
+            return
+        }
+
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            engine.stop()
+        }
+
+        var audioDeviceID = AudioDeviceID(deviceIDValue)
+        let propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let audioUnit = engine.outputNode.auAudioUnit.audioUnit
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &audioDeviceID,
+            propertySize
+        )
+
+        if status != noErr {
+            print("Failed to set output device \(device.name) (status: \(status))")
+        }
+
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("Failed to restart engine after device switch: \(error)")
+            }
+        }
     }
 
     @objc private func audioEngineConfigurationChange(_ notification: Notification) {
@@ -179,7 +213,7 @@ class AVFAudioService: AudioService, ObservableObject {
 
     private func generateSample(at time: Double) -> Float {
         guard let sound = currentSound else { return 0.0 }
-        let frequency = 440.0 // TODO: Get frequency from parameters
+        let frequency = sound.parameter(named: "frequency")?.value ?? 440.0
         switch sound.waveform {
         case .sine:
             return sin(Float(2.0 * .pi * frequency * time))

@@ -391,10 +391,10 @@ struct TemplateDetailView: View {
                 }
                 .buttonStyle(.bordered)
 
-                // Button("Create Template") {
-                //     createTemplate()  // TODO: Implement template creation
-                // }
-                // .buttonStyle(.borderedProminent)
+                Button("Apply Template") {
+                    applyTemplate()
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
         .padding()
@@ -443,6 +443,10 @@ struct TemplateDetailView: View {
                     )
                     let _ = try await blockManager.createBlock(type: blockType, at: position)
                 }
+
+                // Add connections if defined in template
+                // This would require extending the template structure to include connections
+
                 onDismiss()
             } catch {
                 print("Failed to apply template: \(error)")
