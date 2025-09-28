@@ -181,7 +181,10 @@ class AVFAudioService: AudioService, ObservableObject {
 
         var audioDeviceID = AudioDeviceID(deviceIDValue)
         let propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let audioUnit = engine.outputNode.auAudioUnit.audioUnit
+        guard let audioUnit = engine.outputNode.audioUnit else {
+            print("Failed to get audio unit from output node")
+            return
+        }
         let status = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,

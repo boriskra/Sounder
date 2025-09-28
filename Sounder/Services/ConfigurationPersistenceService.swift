@@ -290,9 +290,8 @@ class ConfigurationPersistenceService: ObservableObject {
             throw ConfigurationPersistenceError.invalidFormat("Legacy file must contain a JSON object")
         }
 
-        let name: String = (root["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            .flatMap { $0.isEmpty ? nil : $0 }
-            ?? url.deletingPathExtension().lastPathComponent
+        let trimmedName = (root["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name: String = (trimmedName?.isEmpty == false) ? trimmedName! : url.deletingPathExtension().lastPathComponent
 
         let legacyDescription: String? = (root["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         var metadata: [String: String] = (root["metadata"] as? [String: String]) ?? [:]
@@ -404,9 +403,8 @@ class ConfigurationPersistenceService: ObservableObject {
             )
         }
 
-        let version: String = (root["version"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            .flatMap { $0.isEmpty ? nil : $0 }
-            ?? currentVersion
+        let trimmedVersion = (root["version"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let version: String = (trimmedVersion?.isEmpty == false) ? trimmedVersion! : currentVersion
 
         return BlockConfiguration(
             id: UUID(),
@@ -974,7 +972,7 @@ class CSVConfigurationExporter {
 
 // MARK: - Import Helpers
 
-private struct ImportedParameterData {
+struct ImportedParameterData {
     let name: String
     let displayName: String?
     let value: Double?
@@ -1011,13 +1009,21 @@ private struct ImportedParameterData {
     }
 }
 
-private struct ImportedBlockBuilder {
+struct ImportedBlockBuilder {
     let id: UUID
     let type: BlockType
     var title: String
     var position: CGPoint
     var isActive: Bool
     private var parameterOverrides: [String: ImportedParameterData] = [:]
+
+    init(id: UUID, type: BlockType, title: String, position: CGPoint, isActive: Bool) {
+        self.id = id
+        self.type = type
+        self.title = title
+        self.position = position
+        self.isActive = isActive
+    }
 
     mutating func setParameter(_ parameter: ImportedParameterData) {
         parameterOverrides[parameter.name] = parameter
@@ -1127,7 +1133,7 @@ private func inferredStepSize(min: Double, max: Double) -> Double {
     if candidate >= 0.1 {
         return 0.1
     }
-    return max(candidate, 0.01)
+    return Swift.max(candidate, 0.01)
 }
 
 private func parseLegacyDate(_ primaryValue: Any?, fallbackKeys: [String], in container: [String: Any]) -> Date? {
@@ -1346,9 +1352,8 @@ class XMLConfigurationImporter: NSObject, XMLParserDelegate {
                 blockIds.contains(connection.sourceBlockId) && blockIds.contains(connection.destinationBlockId)
             }
 
-            let name: String = configurationName?.trimmingCharacters(in: .whitespacesAndNewlines)
-                .flatMap { $0.isEmpty ? nil : $0 }
-                ?? url.deletingPathExtension().lastPathComponent
+            let trimmedConfigName = configurationName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name: String = (trimmedConfigName?.isEmpty == false) ? trimmedConfigName! : url.deletingPathExtension().lastPathComponent
 
             var metadata: [String: String] = [:]
             if let description = configurationDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {

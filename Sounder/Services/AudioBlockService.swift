@@ -92,19 +92,19 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     private let analysisSmoothing: Float = 0.85
     private let minimumLevel: Float = 1.0e-5
     private let analysisLog2n: vDSP_Length
-    private var analysisFFTSetup: FFTSetup?
-    private var analysisWindow: [Float]
-    private var analysisRingBuffer: [Float]
-    private var analysisRingIndex: Int = 0
-    private var analysisRingCount: Int = 0
-    private var analysisWorkingBuffer: [Float]
-    private var analysisReal: [Float]
-    private var analysisImag: [Float]
-    private var latestSpectrumMagnitudes: [Float]
-    private var latestPeakLinear: Float = 0.0
-    private var latestRMSLinear: Float = 0.0
-    private var latestFrequencyEstimate: Double?
-    private var analysisSampleRate: Double = 48_000.0
+    nonisolated(unsafe) private var analysisFFTSetup: FFTSetup?
+    nonisolated(unsafe) private var analysisWindow: [Float]
+    nonisolated(unsafe) private var analysisRingBuffer: [Float]
+    nonisolated(unsafe) private var analysisRingIndex: Int = 0
+    nonisolated(unsafe) private var analysisRingCount: Int = 0
+    nonisolated(unsafe) private var analysisWorkingBuffer: [Float]
+    nonisolated(unsafe) private var analysisReal: [Float]
+    nonisolated(unsafe) private var analysisImag: [Float]
+    nonisolated(unsafe) private var latestSpectrumMagnitudes: [Float]
+    nonisolated(unsafe) private var latestPeakLinear: Float = 0.0
+    nonisolated(unsafe) private var latestRMSLinear: Float = 0.0
+    nonisolated(unsafe) private var latestFrequencyEstimate: Double?
+    nonisolated(unsafe) private var analysisSampleRate: Double = 48_000.0
 
     public init() {
         analysisLog2n = vDSP_Length(log2(Float(analysisFFTSize)))
@@ -559,11 +559,10 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
 
         let outputNode = engine.outputNode
         let hardwareLatency = outputNode.presentationLatency
-        let engineLatency = engine.latency
         let outputFormat = outputNode.outputFormat(forBus: 0)
         let sampleRate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : analysisSampleRate
         let bufferDuration = sampleRate > 0 ? Double(frameSize) / sampleRate : 0.0
-        let totalLatency = (hardwareLatency + engineLatency + bufferDuration) * 1000.0
+        let totalLatency = (hardwareLatency + bufferDuration) * 1000.0
         return max(totalLatency, 0.0)
     }
 

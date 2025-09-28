@@ -362,6 +362,12 @@ struct ParameterControlsView: View {
         }
     }
 
+    // MARK: - Helper Functions
+
+    private func generateMockHistory() -> [Double] {
+        (0..<50).map { _ in Double.random(in: -60...0) }
+    }
+
     // MARK: - Chirp Controls
 
     private func chirpControls(for block: SignalBlock) -> some View {
