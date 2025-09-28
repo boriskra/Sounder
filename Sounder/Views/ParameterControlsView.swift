@@ -355,25 +355,25 @@ struct ParameterControlsView: View {
         // Load devices from block manager or use default set
         availableDevices = [
             OutputDevice(
-                id: "default",
+                id: 0,
                 name: "Default Output",
                 isDefault: true,
                 isAvailable: true
             ),
             OutputDevice(
-                id: "builtin",
+                id: 1,
                 name: "MacBook Pro Speakers",
                 isDefault: false,
                 isAvailable: true
             ),
             OutputDevice(
-                id: "bluetooth1",
+                id: 2,
                 name: "AirPods Pro",
                 isDefault: false,
                 isAvailable: true
             ),
             OutputDevice(
-                id: "bluetooth2",
+                id: 3,
                 name: "Sony WH-1000XM4",
                 isDefault: false,
                 isAvailable: true

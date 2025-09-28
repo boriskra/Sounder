@@ -15,8 +15,8 @@ class MockAudioService: AudioService, ObservableObject {
         return _availableOutputDevicesSubject.eraseToAnyPublisher()
     }
     private let _availableOutputDevicesSubject = CurrentValueSubject<[OutputDevice], Never>([
-        OutputDevice(id: "1", name: "Mock Built-in Output", isDefault: true, isAvailable: true),
-        OutputDevice(id: "2", name: "Mock External Headphones", isDefault: false, isAvailable: true)
+        OutputDevice(id: 1, name: "Mock Built-in Output", isDefault: true, isAvailable: true),
+        OutputDevice(id: 2, name: "Mock External Headphones", isDefault: false, isAvailable: true)
     ])
 
     @Published var currentOutputDevice: OutputDevice?

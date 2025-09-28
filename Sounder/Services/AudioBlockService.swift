@@ -454,7 +454,7 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         if devices.isEmpty {
             return [
                 OutputDevice(
-                    id: "default",
+                    id: 0,
                     name: "Default Output",
                     isDefault: true,
                     isAvailable: true

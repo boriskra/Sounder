@@ -11,8 +11,8 @@ class MockAudioBlockService: AudioBlockService, ObservableObject {
 
     // Mock devices
     private let mockDevices = [
-        OutputDevice(id: "mock-builtin", name: "Mock Built-in Output", isDefault: true, isAvailable: true),
-        OutputDevice(id: "mock-headphones", name: "Mock Headphones", isDefault: false, isAvailable: true)
+        OutputDevice(id: 1, name: "Mock Built-in Output", isDefault: true, isAvailable: true),
+        OutputDevice(id: 2, name: "Mock Headphones", isDefault: false, isAvailable: true)
     ]
 
     init() {

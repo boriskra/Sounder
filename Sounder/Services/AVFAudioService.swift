@@ -5,7 +5,7 @@ import CoreAudio
 import AudioToolbox
 import Accelerate
 
-enum AudioServiceError: Error {
+public enum AudioServiceError: Error {
     case soundNotSet
     case outputDeviceNotSet
     case audioEngineError(Error)
@@ -134,7 +134,7 @@ public final class AVFAudioService: AudioService, ObservableObject {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMaster
+            mElement: kAudioObjectPropertyElementMain
         )
 
         var propertySize: UInt32 = 0
@@ -173,7 +173,7 @@ public final class AVFAudioService: AudioService, ObservableObject {
             let status3 = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, deviceName)
             if status3 == noErr {
                 let name = String(cString: deviceName)
-                devices.append(OutputDevice(id: String(deviceID), name: name, isDefault: false, isAvailable: true))
+                devices.append(OutputDevice(id: deviceID, name: name, isDefault: false, isAvailable: true))
             }
         }
 
@@ -181,11 +181,7 @@ public final class AVFAudioService: AudioService, ObservableObject {
     }
 
     private func applyEngineOutputDevice(_ device: OutputDevice) throws {
-        guard let deviceIDValue = UInt32(device.id) else {
-            throw AudioServiceError.audioEngineError(
-                NSError(domain: NSOSStatusErrorDomain, code: Int(kAudio_ParamError))
-            )
-        }
+        let deviceIDValue = device.id
 
         let wasRunning = engine.isRunning
         if wasRunning {

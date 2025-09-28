@@ -1,132 +1,244 @@
 # Sounder: Visual Audio Signal Processing
 
-Sounder is a macOS application for generating and processing audio signals using a visual, block-based editor. Users can create complex audio configurations by dragging, dropping, and connecting different audio processing blocks.
+**⚠️ PROJECT STATUS: DEVELOPMENT/PROTOTYPE ⚠️**
 
-## Key Technologies
+Sounder is a **work-in-progress** macOS application for generating and processing audio signals using a visual, block-based editor. **This is not a production-ready application.** Many features are incomplete, broken, or exist only as mock implementations.
+
+## Build Status
+
+✅ **Builds Successfully** - The project compiles without errors
+❌ **Tests Failing** - Test suite has compilation errors and many tests are incomplete
+⚠️ **Incomplete Implementation** - Core functionality is partially implemented
+
+## Technologies
 
 - **Swift 5.9+** & **SwiftUI**
-- **AVFoundation** for the core audio engine
-- **XCTest** for unit and UI testing
-- Native SwiftUI Canvas for the block editor and Drag & Drop
+- **AVFoundation** for audio engine (partially implemented)
+- **XCTest** for testing (many tests are stubs)
+- SwiftUI Canvas for block editor (basic implementation)
+
+## Current Implementation State
+
+### ✅ **What Works**
+- Project builds and compiles
+- Basic SwiftUI UI structure
+- Mock services for development/preview
+- Audio block type definitions
+- Basic dependency injection setup
+
+### ⚠️ **Partially Implemented**
+- **Audio Engine**: `AudioBlockServiceImpl` exists but uses unsafe concurrency patterns
+- **Audio Blocks**: Only 6 out of 18 block types are implemented:
+  - ✅ SineOscillatorBlock
+  - ✅ TriangleOscillatorBlock
+  - ✅ FrequencyModulatorBlock
+  - ✅ WhiteNoiseBlock
+  - ✅ SpectrumAnalyzerBlock
+  - ✅ AudioOutputBlock
+- **Block Manager**: Core service exists but integration is incomplete
+- **UI Components**: Basic structure exists, many controls are placeholders
+
+### ❌ **Not Implemented**
+- **12 Block Types Missing**: squareOscillator, sawtoothOscillator, pinkNoise, linearChirp, hyperbolicChirp, amplitudeModulator, ringModulator, lowPassFilter, highPassFilter, bandPassFilter, mixer, amplifier, levelMeter, frequencyCounter
+- **Audio Persistence**: Save/load functionality is stubbed
+- **Real-time Audio Processing**: Graph scheduler partially implemented
+- **Error Handling**: Minimal error handling throughout
+- **Performance Monitoring**: Mock implementations only
+- **Device Selection**: UI exists but backend integration incomplete
+
+## Critical Issues
+
+### 🚨 **Thread Safety Problems**
+- `AudioBlockService.swift` uses `nonisolated(unsafe)` extensively (lines 102-114)
+- Data races possible in audio rendering thread
+- Mock services don't reflect real concurrency requirements
+
+### 🚨 **Test Infrastructure Broken**
+- `AudioBlockServiceTests.swift`: All tests disabled with `XCTFail("implementation not available")`
+- Test compilation errors due to outdated model signatures
+- No integration tests for audio pipeline
+- Mock vs real implementation coverage gap
+
+### 🚨 **Architecture Inconsistencies**
+- Mixed use of real implementations vs mocks in production code
+- `MockAudioBlockService` and `MockAudioService` are in main target, not test target
+- Dependency injection incomplete - many hardcoded dependencies
+- Protocol contracts don't match actual implementations
+
+### 🚨 **Audio Engine Issues**
+- Real-time safety not guaranteed
+- Buffer management incomplete
+- Device switching partially implemented
+- No proper audio graph validation
 
 ## Project Structure
-
-The project follows a standard MVVM architecture with a strong service layer.
 
 ```
 Sounder/
 ├── Sounder/                          # Main application target
-│   ├── Models/                       # Data models (BlockType, OutputDevice, etc.)
-│   ├── Views/                        # SwiftUI user interface components
-│   ├── ViewModels/                   # View models for UI logic
-│   └── Services/                     # Core business logic and audio processing
-│       ├── AudioBlockService.swift   # Main service for managing and processing audio blocks
-│       ├── AVFAudioService.swift     # Low-level AVFoundation integration
-│       └── AudioBlocks/              # Implementations for individual audio blocks
-├── SounderTests/                     # Unit and integration tests
-├── SounderUITests/                   # UI automation tests
-└── specs/                            # Business and UX specifications
+│   ├── Models/                       # Data models (complete)
+│   ├── Views/                        # SwiftUI components (partial)
+│   ├── ViewModels/                   # View models (basic implementation)
+│   └── Services/                     # Business logic (mixed state)
+│       ├── AudioBlockService.swift   # Main service (partial, unsafe)
+│       ├── AVFAudioService.swift     # Audio foundation (basic)
+│       ├── Mock*.swift               # Mock implementations (shouldn't be here)
+│       └── AudioBlocks/              # Block implementations (6/18 done)
+├── SounderTests/                     # Unit tests (mostly broken)
+├── SounderUITests/                   # UI tests (minimal)
+└── specs/                            # Documentation (outdated)
 ```
 
-## Core Architectural Principles
+## Mock vs Real Implementation Analysis
 
-- **Timeline Coherence:** All audio processing is designed to be stateless and sample-accurate. Block processing functions receive an absolute `startSample` position to prevent phase drift and ensure deterministic output. Phase accumulation is strictly forbidden.
-- **Real-time Safety:** The audio rendering thread is non-blocking. Memory allocation, lock contention, and any other operations that cannot guarantee real-time execution are avoided.
-- **Thread Safety:** Concurrency is managed carefully, with atomic operations used for sharing metrics and lock-free patterns preferred for communication with the audio thread.
+### 🎭 **Mock Service Issues**
+1. **Production Code Pollution**: Mock services are in main target instead of test-only
+2. **False Capabilities**: Mocks claim to support features that aren't implemented
+3. **Data Inconsistency**: Mock data doesn't reflect real audio device constraints
+4. **Testing Gap**: No verification that mocks match real service behavior
 
-## Key Features
+### 🔧 **Real Service Gaps**
+1. **AudioBlockServiceImpl**: Exists but has concurrency safety issues
+2. **AVFAudioService**: Basic implementation, missing advanced features
+3. **BlockManagerService**: Service exists but audio integration incomplete
 
-- **Visual Block Editor:** Drag, drop, and connect blocks on a canvas to build audio processing graphs.
-- **Generators:** Sine, Square, Triangle, Sawtooth, White Noise, Pink Noise, and Chirp oscillators.
-- **Modulation:** Amplitude, Frequency (FM), and Ring modulation blocks.
-- **Processing:** A suite of filters (LPF, HPF, BPF), a Mixer, and an Amplifier.
-- **Analysis:** Real-time Spectrum Analyzer, Level Meter, and Frequency Counter blocks.
-- **I/O:** Audio output device selection and a main output block.
-- **Persistence:** Save and load complex configurations as documents.
+## Build and Development
 
-## Build and Test Commands
+### **Prerequisites**
+- macOS 14.0+ (due to API usage)
+- Xcode 15.0+
+- No external dependencies
 
-- **Open in Xcode:** `open Sounder.xcodeproj`
-- **Build from CLI:** `xcodebuild -project Sounder.xcodeproj -scheme Sounder -destination "platform=macOS" build`
-- **Run Tests from CLI:** `xcodebuild test -project Sounder.xcodeproj -scheme Sounder -destination "platform=macOS"`
-- **Lint Code:** `swiftlint lint --strict`
+### **Build Commands**
+```bash
+# Build (works)
+xcodebuild -project Sounder.xcodeproj -scheme Sounder -destination "platform=macOS" build
+
+# Test (fails - compilation errors)
+xcodebuild test -project Sounder.xcodeproj -scheme Sounder -destination "platform=macOS"
+
+# Open in Xcode
+open Sounder.xcodeproj
+```
+
+### **Known Build Issues**
+- Tests fail compilation due to outdated model signatures
+- Many deprecation warnings (SwiftUI APIs)
+- Concurrency warnings throughout codebase
+
+## Recommended Next Steps
+
+### **Phase 1: Fix Foundation (High Priority)**
+1. **Fix Test Suite**: Update test models to match current signatures
+2. **Remove Production Mocks**: Move mock services to test-only targets
+3. **Thread Safety**: Refactor `nonisolated(unsafe)` code in AudioBlockService
+4. **Error Handling**: Add proper error types and handling throughout
+
+### **Phase 2: Core Audio (Medium Priority)**
+1. **Complete Audio Blocks**: Implement remaining 12 block types
+2. **Audio Graph**: Finish audio graph scheduler implementation
+3. **Device Management**: Complete audio device selection backend
+4. **Performance**: Add real performance monitoring
+
+### **Phase 3: Features (Low Priority)**
+1. **Persistence**: Implement save/load functionality
+2. **UI Polish**: Complete parameter controls and visualizations
+3. **Templates**: Add block configuration templates
+4. **Documentation**: Update specifications to match implementation
+
+## Developer Warning
+
+**Do not rely on this codebase for production use.** This is a prototype with significant gaps:
+
+- Audio processing may not work correctly
+- Data may be lost (no persistence)
+- Performance is unoptimized
+- Error handling is minimal
+- Thread safety is not guaranteed
+
+The project serves as a starting point for a visual audio editor but requires substantial additional development to be usable.
+
+## Technical Background for AI Agents
+
+### **Audio Block Architecture**
+Audio blocks follow the `AudioBlock` protocol defined in `AudioBlockService.swift:41-58`. Each block must implement:
+```swift
+public protocol AudioBlock {
+    var id: UUID { get }
+    var type: BlockType { get }
+    var inputPorts: [String] { get }
+    var outputPorts: [String] { get }
+
+    func processAudio(
+        inputs: [String: [Float]],
+        frameCount: Int,
+        startSample: UInt64,
+        sampleRate: Double
+    ) -> [String: [Float]]
+
+    func setParameter(name: String, value: Double)
+    func getParameter(name: String) -> Double?
+}
+```
+
+### **Existing Block Implementations**
+Reference implementations exist in `/Sounder/Services/AudioBlocks/`:
+- `SineOscillatorBlock.swift` - Pure sine wave generator
+- `TriangleOscillatorBlock.swift` - Triangle wave with anti-aliasing
+- `FrequencyModulatorBlock.swift` - FM synthesis implementation
+- `WhiteNoiseBlock.swift` - Random noise with seeding
+- `SpectrumAnalyzerBlock.swift` - FFT-based frequency analysis
+- `AudioOutputBlock.swift` - Device output routing
+
+### **DSP Library Components**
+Reusable DSP components in `/Sounder/Services/AudioBlocks/DSP/`:
+- `OscillatorPhaseAccumulator.swift` - Phase-coherent oscillator base
+- `BiquadFilterCore.swift` - Digital filter implementation
+- `NoiseGeneratorBase.swift` - Seeded noise generation
+- `GainAndSmoothing.swift` - Parameter smoothing utilities
+- `SignalAnalysisKit.swift` - Frequency/level analysis tools
+- `ChirpEnvelopeEngine.swift` - Sweep signal generation
+
+### **Block Type Definitions**
+All 18 block types are defined in `BlockType.swift` with:
+- Display names and descriptions
+- Required parameters and default values
+- Input/output port configurations
+- Parameter creation methods
+
+### **Audio Engine Integration**
+The `AudioBlockServiceImpl` class manages:
+- Block registration and lifecycle
+- Audio graph scheduling via `AudioGraphScheduler`
+- Real-time parameter updates
+- Performance monitoring
+- Device management integration
+
+### **Thread Safety Requirements**
+- Audio processing runs on real-time thread
+- Parameter updates must use atomic operations
+- Memory allocation forbidden in audio callback
+- Use `nonisolated` functions for thread-safe operations
+
+### **Testing Patterns**
+Follow test patterns in existing files:
+- Unit tests for individual blocks in `/SounderTests/`
+- Mock implementations for UI previews
+- Integration tests for audio pipeline
+- Performance tests for real-time constraints
+
+### **UI Integration Points**
+- Block creation via `BlockManagerService.createBlock()`
+- Parameter controls in `ParameterControlsView.swift`
+- Visual feedback through analysis blocks
+- Device selection in `AudioDeviceView.swift`
+
+### **Development Environment**
+- Xcode 15.0+ required for Swift 5.9 features
+- macOS 14.0+ for AVFoundation APIs
+- No external dependencies - pure Swift/AVFoundation
+- SwiftLint for code style consistency
 
 ---
 
-## TODO: Agent Implementation Tasks
-
-This section contains a list of specific, actionable tasks to improve the codebase.
-
-### 1. High Priority: Resolve Documentation Conflict
-
-**Goal:** Create a single source of truth for project documentation and eliminate outdated, conflicting information.
-
-**Instructions:**
-1.  This `README.md` file now serves as the single source of truth.
-2.  Execute the following shell command to delete all the old, conflicting `.md` files:
-    ```bash
-    rm AGENTS.md AI_BOOTSTRAP.md CLAUDE.md GEMINI.md PLAN.md QWEN.md
-    ```
-
-### 2. Medium Priority: Implement Missing UI Controls
-
-**Goal:** Complete the UI for the `Mixer` and `Amplifier` blocks.
-
-**Instructions:**
-1.  **File to Modify:** `Sounder/Views/ParameterControlsView.swift`.
-2.  **Locate Function:** Find the `blockSpecificControls(for block: SignalBlock)` function.
-3.  **Identify Placeholder:** Inside the `switch block.type` statement, find these cases:
-    ```swift
-    case .mixer, .amplifier:
-        Text("Processing controls not implemented")
-    ```
-4.  **Implement UI:**
-    *   Replace the `Text(...)` placeholder with a new view builder function (e.g., `mixerControls(for: block)`).
-    *   Inside the new function, create `ParameterControlRow` views for each parameter of the `Mixer` and `Amplifier` blocks (e.g., "gain", "volume", "pan").
-    *   You can use the existing `filterControls(for:)` or `modulatorControls(for:)` as a template for your implementation.
-
-### 3. Medium Priority: Refactor `nonisolated(unsafe)` for Improved Concurrency Safety
-
-**Goal:** Remove the use of `nonisolated(unsafe)` in `AudioBlockService.swift` to eliminate the risk of data races and improve thread safety.
-
-**Instructions:**
-1.  **File to Modify:** `Sounder/Services/AudioBlockService.swift`.
-2.  **Identify Properties:** Locate the block of properties marked with `nonisolated(unsafe)`. This includes `analysisFFTSetup`, `analysisWindow`, `latestSpectrumMagnitudes`, etc.
-3.  **Refactoring Plan:**
-    *   Create a new `actor` named `AnalysisState` to encapsulate all of these properties.
-    *   Move the properties and the functions that exclusively operate on them (`updateAnalysis`, `refreshSpectrumIfNeeded`, `computeDominantFrequency`, `resetAnalysisStateLocked`) inside the `AnalysisState` actor.
-    *   In `AudioBlockService`, replace the direct property declarations with a single instance of the new actor: `private let analysisState = AnalysisState()`.
-    *   Update all call sites that previously accessed the unsafe properties to now `await` calls to the methods on the `analysisState` actor. For example, `scheduleAnalysisUpdate(...)` will now call `await analysisState.updateAnalysis(...)`.
-    *   The `getSpectrumData` and `getLevelMeterData` functions will also need to be updated to `await` the results from the actor.
-
-### 4. Low Priority: Make Audio Device Handling More Robust
-
-**Goal:** Refactor the device handling logic in `AVFAudioService.swift` to use safer, more idiomatic Swift APIs.
-
-**Instructions:**
-1.  **File to Modify:** `Sounder/Services/AVFAudioService.swift`.
-2.  **Task 1: Update `OutputDevice` Model:**
-    *   Locate the `OutputDevice` model (likely in `Sounder/Models/OutputDevice.swift`).
-    *   Change the `id` property from `String` to `AudioDeviceID` (which is a `UInt32`).
-3.  **Task 2: Update `enumerateOutputDevices()`:**
-    *   Modify the function to stop converting the `AudioDeviceID` to a `String`.
-    *   Instead of using `kAudioDevicePropertyDeviceName` with an unsafe C-string buffer, use `kAudioDevicePropertyDeviceNameCFString` to fetch the name as a `CFString`, which can be safely cast to a Swift `String`.
-4.  **Task 3: Update `applyEngineOutputDevice()`:**
-    *   This function takes an `OutputDevice` as input. Modify it to use the `device.id` (which is now a `UInt32`) directly when setting the `kAudioOutputUnitProperty_CurrentDevice` property. This removes the need to parse a `String` back into a `UInt32`.
-
-### 5. Low Priority: Remove Obsolete Fallback Code
-
-**Goal:** Clean up dead code in the audio render callback.
-
-**Instructions:**
-1.  **File to Modify:** `Sounder/Services/AudioBlockService.swift`.
-2.  **Locate Function:** Find the `connectOutputBlockToEngine(_:)` function.
-3.  **Identify Code Block:** Inside the `AVAudioSourceNode` render closure, find the following conditional block:
-    ```swift
-    // If no proper graph output, fall back to direct sine generation for compatibility
-    if outputSamples.allSatisfy({ $0 == 0.0 }) {
-        // ... (15-20 lines of sine wave generation logic) ...
-    }
-    ```
-4.  **Action:** Delete this entire `if` block. The audio graph scheduler is now the single source of truth, and this fallback is no longer necessary.
-
+*This README reflects the actual state of the codebase as of the latest code review. See PLAN.md for detailed implementation steps.*
