@@ -2,3 +2,6 @@
 build.log
 DerivedData/
 swiftlint-output.txt
+
+# macOS metadata
+.DS_Store
