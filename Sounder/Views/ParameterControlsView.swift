@@ -150,11 +150,33 @@ struct ParameterControlsView: View {
             case .lowPassFilter, .highPassFilter, .bandPassFilter:
                 filterControls(for: block)
             case .mixer, .amplifier:
-                Text("Processing controls not implemented")
+                processingControls(for: block)
             case .levelMeter, .frequencyCounter:
                 meterControls(for: block)
             }
         }
+    }
+
+    private func processingControls(for block: SignalBlock) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Processing Settings")
+                .font(.subheadline.bold())
+
+            ForEach(Array(block.parameters.keys.sorted()), id: \.self) { parameterName in
+                if let parameter = block.parameters[parameterName] {
+                    ParameterControlRow(
+                        parameter: parameter,
+                        blockId: block.id,
+                        blockManager: blockManager,
+                        showingAutomation: showingAutomation,
+                        history: parameterHistory[parameterName] ?? []
+                    )
+                }
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(8)
     }
 
     private func sineOscillatorControls(for block: SignalBlock) -> some View {

@@ -1,9 +1,10 @@
 import Foundation
+import CoreAudio
 
 /// Represents an audio output device available in the system
 /// Used for routing generated audio to specific hardware devices
 public struct OutputDevice: Identifiable, Codable, Equatable, Hashable {
-    public let id: String
+    public let id: AudioDeviceID
     public let name: String
     public let isDefault: Bool
     public let isAvailable: Bool
@@ -14,7 +15,7 @@ public struct OutputDevice: Identifiable, Codable, Equatable, Hashable {
     ///   - name: Human-readable name of the device
     ///   - isDefault: Whether this is the system's default output device
     ///   - isAvailable: Whether the device is currently available for use
-    public init(id: String, name: String, isDefault: Bool, isAvailable: Bool) {
+    public init(id: AudioDeviceID, name: String, isDefault: Bool, isAvailable: Bool) {
         self.id = id
         self.name = name
         self.isDefault = isDefault
