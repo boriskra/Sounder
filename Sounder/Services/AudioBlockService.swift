@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import Accelerate
+import Darwin
 
 /// Service contract for audio processing of signal blocks
 public protocol AudioBlockService {
@@ -27,6 +28,8 @@ public protocol AudioBlockService {
     func getSpectrumData(for blockId: UUID?) async -> [Float]
     func getLevelMeterData(for blockId: UUID?) async -> (peak: Float, rms: Float)
     func getFrequencyAnalysis(for blockId: UUID) async -> Double?
+    func resetAnalysis(for blockId: UUID?) async
+    func reseedNoiseGenerator(blockId: UUID) async
 
     // MARK: - Performance Monitoring
     func getAudioCPUUsage() async -> Double
@@ -81,8 +84,12 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     private var currentOutputDevice: OutputDevice?
     private var bufferUnderrunCount: Int = 0
     private var cpuUsage: Double = 0.0
+    private var previousCPUTicks: (user: UInt64, system: UInt64, nice: UInt64, idle: UInt64)?
     private var graphScheduler: AudioGraphScheduler?
     private let frameSize: Int = 512
+    private let avfAudioService: AVFAudioService
+    private var serviceCancellables: Set<AnyCancellable> = []
+    private var lastCPUUpdateTime: CFAbsoluteTime = 0
 
     private let eventPublisher: PassthroughSubject<AudioBlockEvent, Never> = PassthroughSubject<AudioBlockEvent, Never>()
 
@@ -106,7 +113,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     nonisolated(unsafe) private var latestFrequencyEstimate: Double?
     nonisolated(unsafe) private var analysisSampleRate: Double = 48_000.0
 
-    public init() {
+    public init(avfAudioService: AVFAudioService) {
+        self.avfAudioService = avfAudioService
         analysisLog2n = vDSP_Length(log2(Float(analysisFFTSize)))
         analysisWindow = Array(repeating: 0.0, count: analysisFFTSize)
         vDSP_hann_window(&analysisWindow, vDSP_Length(analysisFFTSize), Int32(vDSP_HANN_NORM))
@@ -116,12 +124,24 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         analysisImag = Array(repeating: 0.0, count: analysisFFTSize / 2)
         latestSpectrumMagnitudes = Array(repeating: 0.0, count: analysisFFTSize / 2)
         analysisFFTSetup = vDSP_create_fftsetup(analysisLog2n, FFTRadix(kFFTRadix2))
+        currentOutputDevice = avfAudioService.currentOutputDevice
+        bindToAudioService()
     }
 
     deinit {
         if let setup = analysisFFTSetup {
             vDSP_destroy_fftsetup(setup)
         }
+        serviceCancellables.removeAll()
+    }
+
+    private func bindToAudioService() {
+        avfAudioService.$currentOutputDevice
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] device in
+                self?.currentOutputDevice = device
+            }
+            .store(in: &serviceCancellables)
     }
 
     // MARK: - Audio Engine Management
@@ -430,36 +450,17 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     // MARK: - Audio Device Management
 
     public func getAvailableOutputDevices() async -> [OutputDevice] {
-        var devices: [OutputDevice] = []
-
-        // Get system default device
-        #if os(iOS)
-        if let defaultDevice = AVAudioSession.sharedInstance().currentRoute.outputs.first {
-            devices.append(OutputDevice(
-                id: defaultDevice.uid ?? "default",
-                name: defaultDevice.portName,
-                isDefault: true,
-                isAvailable: true
-            ))
+        let devices = avfAudioService.availableOutputDevices()
+        if devices.isEmpty {
+            return [
+                OutputDevice(
+                    id: "default",
+                    name: "Default Output",
+                    isDefault: true,
+                    isAvailable: true
+                )
+            ]
         }
-        #else
-        // macOS default device handling
-        devices.append(OutputDevice(
-            id: "default",
-            name: "Default Output",
-            isDefault: true,
-            isAvailable: true
-        ))
-        #endif
-
-        // Get available audio outputs (simplified for demo)
-        // In a real implementation, you'd enumerate all available devices
-        devices.append(contentsOf: [
-            OutputDevice(id: "builtin-speakers", name: "Built-in Speakers", isDefault: false, isAvailable: true),
-            OutputDevice(id: "bluetooth-headphones", name: "Bluetooth Headphones", isDefault: false, isAvailable: true),
-            OutputDevice(id: "airpods", name: "AirPods Pro", isDefault: false, isAvailable: false)
-        ])
-
         return devices
     }
 
@@ -468,10 +469,8 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
             throw AudioBlockError.audioDeviceError("Device '\(device.name)' is not available")
         }
 
-        // In a real implementation, you would configure AVAudioSession to use the specific device
-        // For this demo, we'll just track the current device
+        try await avfAudioService.setOutputDevice(device)
         currentOutputDevice = device
-
         eventPublisher.send(.outputDeviceChanged(device))
     }
 
@@ -541,12 +540,40 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
         }
     }
 
+    public func resetAnalysis(for blockId: UUID?) async {
+        if let blockId, let block = registeredBlocks[blockId] {
+            block.reset()
+        }
+
+        let sampleRate = audioFormat?.sampleRate ?? analysisSampleRate
+        analysisQueue.sync {
+            resetAnalysisStateLocked(sampleRate: sampleRate)
+        }
+    }
+
+    public func reseedNoiseGenerator(blockId: UUID) async {
+        guard let block = registeredBlocks[blockId] else { return }
+
+        if let whiteBlock = block as? WhiteNoiseAudioBlock {
+            whiteBlock.reseed()
+        } else if let pinkBlock = block as? PinkNoiseAudioBlock {
+            pinkBlock.reseed()
+        }
+    }
+
     // MARK: - Performance Monitoring
 
     public func getAudioCPUUsage() async -> Double {
-        // Placeholder implementation
-        // In a real implementation, this would measure actual CPU usage
-        cpuUsage = Double.random(in: 0.05...0.25)
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastCPUUpdateTime < 0.5 {
+            return cpuUsage
+        }
+
+        if let usage = sampleProcessCPUUsage() {
+            cpuUsage = max(0.0, min(usage * 100.0, 100.0))
+            lastCPUUpdateTime = now
+        }
+
         return cpuUsage
     }
 
@@ -567,6 +594,62 @@ public class AudioBlockServiceImpl: AudioBlockService, ObservableObject {
     }
 
     // MARK: - Private Methods
+
+    private func sampleProcessCPUUsage() -> Double? {
+        let hostPort = mach_host_self()
+        var cpuInfo: processor_info_array_t?
+        var cpuInfoCount: mach_msg_type_number_t = 0
+        var processorCount: natural_t = 0
+
+        let status = host_processor_info(hostPort, PROCESSOR_CPU_LOAD_INFO, &processorCount, &cpuInfo, &cpuInfoCount)
+        guard status == KERN_SUCCESS, let info = cpuInfo else {
+            mach_port_deallocate(mach_task_self_, hostPort)
+            return nil
+        }
+
+        defer {
+            let byteCount = vm_size_t(cpuInfoCount) * vm_size_t(MemoryLayout<integer_t>.size)
+            vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: info)), byteCount)
+            mach_port_deallocate(mach_task_self_, hostPort)
+        }
+
+        let stride = Int(CPU_STATE_MAX)
+        var userTicks: UInt64 = 0
+        var systemTicks: UInt64 = 0
+        var idleTicks: UInt64 = 0
+        var niceTicks: UInt64 = 0
+
+        for processorIndex in 0..<Int(processorCount) {
+            let base = processorIndex * stride
+            userTicks += UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_USER)]))
+            systemTicks += UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_SYSTEM)]))
+            idleTicks += UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_IDLE)]))
+            niceTicks += UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_NICE)]))
+        }
+
+        let currentTicks = (user: userTicks, system: systemTicks, nice: niceTicks, idle: idleTicks)
+
+        guard let previousTicks = previousCPUTicks else {
+            previousCPUTicks = currentTicks
+            return nil
+        }
+
+        let userDelta = userTicks >= previousTicks.user ? userTicks - previousTicks.user : 0
+        let systemDelta = systemTicks >= previousTicks.system ? systemTicks - previousTicks.system : 0
+        let niceDelta = niceTicks >= previousTicks.nice ? niceTicks - previousTicks.nice : 0
+        let idleDelta = idleTicks >= previousTicks.idle ? idleTicks - previousTicks.idle : 0
+
+        let activeDelta = Double(userDelta + systemDelta + niceDelta)
+        let totalDelta = activeDelta + Double(idleDelta)
+
+        previousCPUTicks = currentTicks
+
+        guard totalDelta > 0 else {
+            return nil
+        }
+
+        return activeDelta / totalDelta
+    }
 
     nonisolated(unsafe) private func scheduleAnalysisUpdate(samples: [Float], sampleRate: Double) {
         guard !samples.isEmpty else { return }
@@ -1716,6 +1799,12 @@ private class PinkNoiseAudioBlock: AudioBlock {
         print("🔊 [DEBUG] PinkNoiseAudioBlock.reset() - Reset to beginning")
     }
 
+    func reseed() {
+        noiseGenerator.reseed()
+        filterState.reset()
+        nextTimelineSample = 0
+    }
+
     private func alignStateIfNeeded(startSample: UInt64, sampleRate: Double) {
         if let expectedSample: UInt64 = nextTimelineSample {
             if startSample == expectedSample {
@@ -1889,6 +1978,10 @@ private class WhiteNoiseAudioBlock: AudioBlock {
     func reset() {
         noiseGenerator.reset()
         print("🔊 [DEBUG] WhiteNoiseAudioBlock.reset() - Reset to beginning")
+    }
+
+    func reseed() {
+        noiseGenerator.reseed()
     }
 
     @inline(__always)

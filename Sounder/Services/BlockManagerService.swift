@@ -26,6 +26,8 @@ public protocol BlockManagerService {
     func stopAudioProcessing() async
     func isAudioProcessing() async -> Bool
     func setOutputDevice(_ device: OutputDevice) async throws
+    func resetAnalysis(for blockId: UUID?) async
+    func reseedNoiseGenerator(blockId: UUID) async
 }
 
 /// Concrete implementation of BlockManagerService
@@ -356,6 +358,14 @@ public class BlockManagerServiceImpl: BlockManagerService, ObservableObject {
         } catch {
             throw BlockManagerError.audioDeviceError("Failed to set output device: \(error.localizedDescription)")
         }
+    }
+
+    public func resetAnalysis(for blockId: UUID?) async {
+        await audioService.resetAnalysis(for: blockId)
+    }
+
+    public func reseedNoiseGenerator(blockId: UUID) async {
+        await audioService.reseedNoiseGenerator(blockId: blockId)
     }
 
     // MARK: - Event Publishing

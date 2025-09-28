@@ -12,7 +12,7 @@ enum AudioServiceError: Error {
     case deviceEnumerationFailed
 }
 
-class AVFAudioService: AudioService, ObservableObject {
+public final class AVFAudioService: AudioService, ObservableObject {
     // MARK: - AudioService Protocol Properties
     var availableSoundsPublisher: AnyPublisher<[Sound], Never> {
         return _availableSoundsSubject.eraseToAnyPublisher()
@@ -24,13 +24,11 @@ class AVFAudioService: AudioService, ObservableObject {
     }
     private let _availableOutputDevicesSubject = CurrentValueSubject<[OutputDevice], Never>([])
 
-    @Published var currentOutputDevice: OutputDevice? {
-        didSet {
-            if let device = currentOutputDevice {
-                setEngineOutputDevice(device)
-            }
-        }
+    func availableOutputDevices() -> [OutputDevice] {
+        _availableOutputDevicesSubject.value
     }
+
+    @Published var currentOutputDevice: OutputDevice?
 
     @Published var currentSound: Sound?
 
@@ -38,6 +36,13 @@ class AVFAudioService: AudioService, ObservableObject {
         return _spectrumSubject.eraseToAnyPublisher()
     }
     private let _spectrumSubject = PassthroughSubject<[Float], Never>()
+
+    func setOutputDevice(_ device: OutputDevice) async throws {
+        try await MainActor.run {
+            try self.applyEngineOutputDevice(device)
+            self.currentOutputDevice = device
+        }
+    }
 
     // MARK: - Internal Properties
     private var engine: AVAudioEngine!
@@ -48,7 +53,7 @@ class AVFAudioService: AudioService, ObservableObject {
     private var fftSetup: FFTSetup!
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
+    public init() {
         engine = AVAudioEngine()
         let mainMixer = engine.mainMixerNode
         let output = engine.outputNode
@@ -91,7 +96,14 @@ class AVFAudioService: AudioService, ObservableObject {
         ])
 
         // Set initial currentOutputDevice and currentSound
-        currentOutputDevice = _availableOutputDevicesSubject.value.first
+        if let initialDevice = _availableOutputDevicesSubject.value.first {
+            do {
+                try applyEngineOutputDevice(initialDevice)
+                currentOutputDevice = initialDevice
+            } catch {
+                print("Failed to apply initial output device: \(error)")
+            }
+        }
         currentSound = _availableSoundsSubject.value.first
     }
 
@@ -168,10 +180,11 @@ class AVFAudioService: AudioService, ObservableObject {
         return devices
     }
 
-    private func setEngineOutputDevice(_ device: OutputDevice) {
+    private func applyEngineOutputDevice(_ device: OutputDevice) throws {
         guard let deviceIDValue = UInt32(device.id) else {
-            print("Invalid audio device identifier: \(device.id)")
-            return
+            throw AudioServiceError.audioEngineError(
+                NSError(domain: NSOSStatusErrorDomain, code: Int(kAudio_ParamError))
+            )
         }
 
         let wasRunning = engine.isRunning
@@ -182,9 +195,11 @@ class AVFAudioService: AudioService, ObservableObject {
         var audioDeviceID = AudioDeviceID(deviceIDValue)
         let propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
         guard let audioUnit = engine.outputNode.audioUnit else {
-            print("Failed to get audio unit from output node")
-            return
+            throw AudioServiceError.audioEngineError(
+                NSError(domain: NSOSStatusErrorDomain, code: Int(kAudioUnitErr_Uninitialized))
+            )
         }
+
         let status = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
@@ -194,16 +209,14 @@ class AVFAudioService: AudioService, ObservableObject {
             propertySize
         )
 
-        if status != noErr {
-            print("Failed to set output device \(device.name) (status: \(status))")
+        guard status == noErr else {
+            throw AudioServiceError.audioEngineError(
+                NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+            )
         }
 
         if wasRunning {
-            do {
-                try engine.start()
-            } catch {
-                print("Failed to restart engine after device switch: \(error)")
-            }
+            try engine.start()
         }
     }
 

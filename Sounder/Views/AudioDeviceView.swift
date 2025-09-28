@@ -685,6 +685,6 @@ enum BluetoothIsolationStatus: String, CaseIterable {
 }
 
 #Preview {
-    AudioDeviceView(blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()))
+    AudioDeviceView(blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl(avfAudioService: AVFAudioService())))
         .frame(width: 350, height: 600)
 }

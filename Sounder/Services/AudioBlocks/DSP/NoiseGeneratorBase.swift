@@ -92,9 +92,30 @@ public final class NoiseGeneratorBase {
         }
     }
 
+    /// Reseeds the generator with a new random seed or a specified value.
+    /// - Parameter seed: Optional explicit seed. If omitted a random seed is used.
+    public func reseed(with seed: UInt64? = nil) {
+        let newSeed = seed ?? UInt64.random(in: UInt64.min...UInt64.max)
+        let cutoff = withLockedState { state -> Double? in
+            baseSeed = newSeed
+            let currentCutoff = state.lowpass.cutoff
+            reseed(&state)
+            state.lowpass.update(cutoff: currentCutoff, sampleRate: state.sampleRate)
+            return currentCutoff
+        }
+
+        withUnsafeMutablePointer(to: &samplesGeneratedRaw) { atomicStoreInt64(0, $0) }
+        withUnsafeMutablePointer(to: &meanBits) { atomicStoreDouble(0.0, $0) }
+        withUnsafeMutablePointer(to: &rmsBits) { atomicStoreDouble(0.0, $0) }
+        withUnsafeMutablePointer(to: &peakBits) { atomicStoreDouble(0.0, $0) }
+        withUnsafeMutablePointer(to: &bandwidthCutoffBits) { atomicStoreDouble(cutoff ?? .nan, $0) }
+    }
+
     /// Returns the most recent quality metrics captured by atomic counters.
     public func metrics() -> NoiseGeneratorMetrics {
-        let renderedSamples: UInt64 = UInt64(bitPattern: OSAtomicAdd64Barrier(0, &samplesGeneratedRaw))
+        let renderedSamples: UInt64 = withUnsafeMutablePointer(to: &samplesGeneratedRaw) {
+            UInt64(bitPattern: atomicLoadInt64($0))
+        }
         let mean: Double = withUnsafeMutablePointer(to: &meanBits, atomicLoadDouble)
         let rms: Double = withUnsafeMutablePointer(to: &rmsBits, atomicLoadDouble)
         let peak: Double = withUnsafeMutablePointer(to: &peakBits, atomicLoadDouble)
@@ -174,7 +195,9 @@ public final class NoiseGeneratorBase {
 
     private func updateMetrics(_ outcome: RenderOutcome) {
         guard outcome.frameCount > 0 else { return }
-        OSAtomicAdd64Barrier(Int64(outcome.frameCount), &samplesGeneratedRaw)
+        withUnsafeMutablePointer(to: &samplesGeneratedRaw) { pointer in
+            _ = atomicAddInt64(Int64(outcome.frameCount), pointer)
+        }
         withUnsafeMutablePointer(to: &meanBits) { atomicStoreDouble(outcome.mean, $0) }
         withUnsafeMutablePointer(to: &rmsBits) { atomicStoreDouble(outcome.rms, $0) }
         withUnsafeMutablePointer(to: &peakBits) { atomicStoreDouble(outcome.peak, $0) }
@@ -205,7 +228,7 @@ public final class NoiseGeneratorBase {
 
     private static let defaultSampleRate: Double = 48_000.0
 
-    private let baseSeed: UInt64
+    private var baseSeed: UInt64
     private var state: State
     private var stateLock: Int32 = 0
 
@@ -364,15 +387,43 @@ private func clamp(_ value: Double) -> Double {
 }
 
 @inline(__always)
-private func atomicStoreDouble(_ value: Double, _ storage: UnsafeMutablePointer<Int64>) {
-    var current: Int64 = OSAtomicAdd64Barrier(0, storage)
-    let newBits: Int64 = Int64(bitPattern: value.bitPattern)
-    while !OSAtomicCompareAndSwap64Barrier(current, newBits, storage) {
-        current = OSAtomicAdd64Barrier(0, storage)
+private func atomicStoreInt64(_ value: Int64, _ storage: UnsafeMutablePointer<Int64>) {
+    while true {
+        let current = storage.pointee
+        if OSAtomicCompareAndSwap64Barrier(current, value, storage) {
+            return
+        }
     }
 }
 
 @inline(__always)
+private func atomicLoadInt64(_ storage: UnsafeMutablePointer<Int64>) -> Int64 {
+    while true {
+        let current = storage.pointee
+        if OSAtomicCompareAndSwap64Barrier(current, current, storage) {
+            return current
+        }
+    }
+}
+
+@inline(__always)
+@discardableResult
+private func atomicAddInt64(_ value: Int64, _ storage: UnsafeMutablePointer<Int64>) -> Int64 {
+    while true {
+        let current = atomicLoadInt64(storage)
+        let updated = current &+ value
+        if OSAtomicCompareAndSwap64Barrier(current, updated, storage) {
+            return updated
+        }
+    }
+}
+
+@inline(__always)
+private func atomicStoreDouble(_ value: Double, _ storage: UnsafeMutablePointer<Int64>) {
+    atomicStoreInt64(Int64(bitPattern: value.bitPattern), storage)
+}
+
+@inline(__always)
 private func atomicLoadDouble(_ storage: UnsafeMutablePointer<Int64>) -> Double {
-    Double(bitPattern: UInt64(bitPattern: OSAtomicAdd64Barrier(0, storage)))
+    Double(bitPattern: UInt64(bitPattern: atomicLoadInt64(storage)))
 }

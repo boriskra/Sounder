@@ -219,7 +219,7 @@ struct ParameterControlsView: View {
                 .font(.subheadline.bold())
 
             Button("Reset Analysis") {
-                // Reset spectrum analyzer
+                resetAnalysis(for: block)
             }
             .buttonStyle(.bordered)
         }
@@ -234,7 +234,7 @@ struct ParameterControlsView: View {
                 .font(.subheadline.bold())
 
             Button("Reseed Generator") {
-                // Reseed random number generator
+                reseedNoiseGenerator(for: block)
             }
             .buttonStyle(.bordered)
         }
@@ -298,6 +298,21 @@ struct ParameterControlsView: View {
         .padding()
         .background(Color.gray.opacity(0.1))
         .cornerRadius(8)
+    }
+
+    private func resetAnalysis(for block: SignalBlock) {
+        Task {
+            await blockManager.resetAnalysis(for: block.id)
+            await MainActor.run {
+                parameterHistory.removeAll(keepingCapacity: false)
+            }
+        }
+    }
+
+    private func reseedNoiseGenerator(for block: SignalBlock) {
+        Task {
+            await blockManager.reseedNoiseGenerator(blockId: block.id)
+        }
     }
 
     // MARK: - Helper Methods
@@ -1001,7 +1016,7 @@ enum ParameterControlType {
     )
 
     ParameterControlsView(
-        blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()),
+        blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl(avfAudioService: AVFAudioService())),
         selectedBlock: sampleBlock
     )
         .onAppear {

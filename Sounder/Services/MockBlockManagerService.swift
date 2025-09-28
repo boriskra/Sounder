@@ -173,6 +173,14 @@ class MockBlockManagerService: BlockManagerService, ObservableObject {
         // Mock implementation - do nothing (AudioService doesn't have this method)
     }
 
+    func resetAnalysis(for blockId: UUID?) async {
+        // Mock implementation
+    }
+
+    func reseedNoiseGenerator(blockId: UUID) async {
+        // Mock implementation
+    }
+
     // MARK: - Private Setup
 
     private func setupSampleBlocks() {

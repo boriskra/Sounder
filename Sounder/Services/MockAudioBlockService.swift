@@ -107,6 +107,14 @@ class MockAudioBlockService: AudioBlockService, ObservableObject {
         return Double.random(in: 20...20000)
     }
 
+    func resetAnalysis(for blockId: UUID?) async {
+        // Mock implementation
+    }
+
+    func reseedNoiseGenerator(blockId: UUID) async {
+        // Mock implementation
+    }
+
     // MARK: - Performance Monitoring
 
     func getPerformanceMetrics() async -> AudioPerformanceMetrics {
@@ -124,7 +132,7 @@ class MockAudioBlockService: AudioBlockService, ObservableObject {
     }
 
     func getAudioCPUUsage() async -> Double {
-        return Double.random(in: 0.05...0.25) // 5-25% CPU usage
+        return Double.random(in: 5...25)
     }
 
     func getBufferUnderrunCount() async -> Int {

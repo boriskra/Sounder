@@ -11,7 +11,8 @@ struct BlockEditorView: View {
     @State var showingAbout = false
 
     init() {
-        let audioService = AudioBlockServiceImpl()
+        let avFoundationService = AVFAudioService()
+        let audioService = AudioBlockServiceImpl(avfAudioService: avFoundationService)
         let blockManagerService = BlockManagerServiceImpl(audioService: audioService)
         let canvasServiceImpl = BlockCanvasServiceImpl(blockManagerService: blockManagerService)
         let editorViewModel = BlockEditorViewModel(

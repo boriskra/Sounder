@@ -408,7 +408,7 @@ struct BlockCanvasView: View {
 }
 
 #Preview {
-    let audioService = AudioBlockServiceImpl()
+    let audioService = AudioBlockServiceImpl(avfAudioService: AVFAudioService())
     let blockManager = BlockManagerServiceImpl(audioService: audioService)
     let canvasService = BlockCanvasServiceImpl(blockManagerService: blockManager)
 

@@ -588,8 +588,8 @@ struct OutputPortView: View {
     BlockView(
         block: sampleBlock,
         isSelected: true,
-        blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()),
-        canvasService: BlockCanvasServiceImpl(blockManagerService: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl()))
+        blockManager: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl(avfAudioService: AVFAudioService())),
+        canvasService: BlockCanvasServiceImpl(blockManagerService: BlockManagerServiceImpl(audioService: AudioBlockServiceImpl(avfAudioService: AVFAudioService())))
     )
     .frame(width: 200, height: 150)
     .background(Color.gray.opacity(0.1))

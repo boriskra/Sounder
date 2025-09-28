@@ -266,34 +266,13 @@ class BlockEditorViewModel: ObservableObject {
     // MARK: - Device Management
 
     private func loadAvailableDevices() async {
-        // Simulate device discovery - in real implementation this would query Core Audio
-        availableOutputDevices = [
-            OutputDevice(
-                id: "default",
-                name: "Default Output",
-                isDefault: true,
-                isAvailable: true
-            ),
-            OutputDevice(
-                id: "builtin",
-                name: "MacBook Pro Speakers",
-                isDefault: false,
-                isAvailable: true
-            )
-        ]
+        let devices = await audioBlockService.getAvailableOutputDevices()
+        availableOutputDevices = devices
 
-        // Add Bluetooth devices if available
-        availableOutputDevices.append(contentsOf: [
-            OutputDevice(
-                id: "bluetooth1",
-                name: "AirPods Pro",
-                isDefault: false,
-                isAvailable: true
-            )
-        ])
-
-        if currentOutputDevice == nil {
-            currentOutputDevice = availableOutputDevices.first { $0.isDefault }
+        if let activeDevice = await audioBlockService.getCurrentOutputDevice() {
+            currentOutputDevice = activeDevice
+        } else if currentOutputDevice == nil {
+            currentOutputDevice = devices.first
         }
     }
 
@@ -495,15 +474,11 @@ class BlockEditorViewModel: ObservableObject {
     }
 
     private func getCPUUsage() async -> Double {
-        // Simplified CPU usage calculation
-        // In a real implementation, this would use system APIs
-        return Double.random(in: 5...25) // Simulate 5-25% usage
+        await audioBlockService.getAudioCPUUsage()
     }
 
     private func getAudioLatency() async -> Double {
-        // Get current audio buffer latency
-        // In a real implementation, this would query the audio engine
-        return 10.7 // Simulate ~10ms latency
+        await audioBlockService.getAudioLatency()
     }
 
     // MARK: - Error Handling
