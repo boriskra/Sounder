@@ -1,0 +1,4 @@
+# Generated artifacts
+build.log
+DerivedData/
+swiftlint-output.txt
